@@ -101,6 +101,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  List<String> get _sortedSymbols {
+    final list = List<String>.from(SYMBOLS);
+    list.sort((a, b) {
+      final sa = _pumpScores[a] ?? 0;
+      final sb = _pumpScores[b] ?? 0;
+      return sb.compareTo(sa);
+    });
+    return list;
+  }
+
   Future<void> _loadState() async {
     Map<String, dynamic>? data;
     try {
@@ -277,6 +287,37 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     LearningEngine.updateWeights(_indicators, _trades);
   }
 
+  void _manualOpen(String symbol) {
+    final price = _livePrices[symbol];
+    if (price == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا يوجد سعر متاح حالياً'), backgroundColor: Color(0xFFEF4444)),
+      );
+      return;
+    }
+    if (_positions.containsKey(symbol)) return;
+    if (_balance < _marginPerTrade) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرصيد غير كافٍ'), backgroundColor: Color(0xFFEF4444)),
+      );
+      return;
+    }
+    setState(() => _openPosition(symbol, price, isScalp: false));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم فتح صفقة على $symbol'), backgroundColor: const Color(0xFF16A34A)),
+    );
+  }
+
+  void _manualClose(String symbol) {
+    final pos = _positions[symbol];
+    if (pos == null) return;
+    final price = _livePrices[symbol] ?? pos.entry;
+    setState(() => _closePosition(symbol, price, 'MANUAL'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم إغلاق صفقة $symbol'), backgroundColor: const Color(0xFF16A34A)),
+    );
+  }
+
   void _openPosition(String symbol, double price, {required bool isScalp}) {
     final size = (_marginPerTrade * _leverage) / price;
     final sl = price * (1 - _slPercent / 100);
@@ -390,9 +431,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return RefreshIndicator(
       onRefresh: _tick,
       child: ListView.builder(
-        padding: const EdgeInsets.all(10), itemCount: SYMBOLS.length,
+        padding: const EdgeInsets.all(10), itemCount: _sortedSymbols.length,
         itemBuilder: (context, i) {
-          final sym = SYMBOLS[i];
+          final sym = _sortedSymbols[i];
           final price = _livePrices[sym];
           final hist = _priceHistory[sym]!;
           final rsi = Indicators.rsi(hist, 14);
@@ -400,6 +441,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           final sl = Indicators.sma(hist, _smaLong);
           final pos = _positions[sym];
           final scalp = _scalpSignals[sym];
+          final pump = _pumpScores[sym] ?? 0.0;
           return Container(
             margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -438,6 +480,44 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ]),
                 ),
               ],
+              const SizedBox(height: 8),
+              Row(children: [
+                if (pump >= 60)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16A34A).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text('🔥 ${pump.toInt()}%',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF4ADE80), fontWeight: FontWeight.bold)),
+                  ),
+                const Spacer(),
+                if (pos == null)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.trending_up, size: 14, color: Colors.white),
+                    label: const Text('فتح صفقة', style: TextStyle(fontSize: 12, color: Colors.white)),
+                    onPressed: () => _manualOpen(sym),
+                  )
+                else
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.close, size: 14, color: Colors.white),
+                    label: const Text('إغلاق', style: TextStyle(fontSize: 12, color: Colors.white)),
+                    onPressed: () => _manualClose(sym),
+                  ),
+              ]),
             ]),
           );
         },
