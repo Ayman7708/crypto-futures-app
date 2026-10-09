@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'engine.dart';
+import 'engine.dart' hide Candle;
 import 'services.dart';
 import 'advanced.dart';
 import 'api_candles.dart';

@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
-class Candle {
+class Kline {
   final int time;
   final double open, high, low, close, volume;
-  Candle({
+  Kline({
     required this.time, required this.open, required this.high,
     required this.low, required this.close, required this.volume,
   });
@@ -17,7 +17,7 @@ class CandleService {
     'https://api.binance.com/api/v3/klines',
   ];
 
-  static Future<List<Candle>?> fetchCandles(
+  static Future<List<Kline>?> fetchCandles(
     String symbol, {
     String interval = '1m',
     int limit = 100,
@@ -44,8 +44,8 @@ class CandleService {
     return null;
   }
 
-  static Future<Map<String, List<Candle>>?> fetchAll(List<String> symbols) async {
-    final out = <String, List<Candle>>{};
+  static Future<Map<String, List<Kline>>?> fetchAll(List<String> symbols) async {
+    final out = <String, List<Kline>>{};
     for (final s in symbols) {
       final c = await fetchCandles(s);
       if (c != null && c.isNotEmpty) out[s] = c;

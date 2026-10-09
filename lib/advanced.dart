@@ -153,8 +153,9 @@ class AdvIndicators {
 
   static double? bollingerSqueeze(List<double> closes, [int period = 20, double mult = 2]) {
     final (low, mid, up) = Indicators.bollinger(closes, period, mult);
-    if (low == null || mid == 0) return null;
-    final width = (up! - low) / mid;
+    if (low == null || mid == null || up == null) return null;
+    if (mid == 0) return null;
+    final width = (up - low) / mid;
     return width;
   }
 }
@@ -226,9 +227,9 @@ class LearningEngine {
       if (ind.tests < 3) continue;
       final wr = ind.winRate;
       if (wr >= 65) {
-        ind.weight = min(2.0, ind.weight * 1.05);
+        ind.weight = min(2.0, ind.weight * 1.05).toDouble();
       } else if (wr < 45) {
-        ind.weight = max(0.3, ind.weight * 0.95);
+        ind.weight = max(0.3, ind.weight * 0.95).toDouble();
       }
       ind.approved = ind.tests >= 5 && wr >= 55;
     }
@@ -246,8 +247,8 @@ class LearningEngine {
     }
     if (closed < 3) return base;
     final wr = wins / closed * 100;
-    if (wr >= 60) return max(40, base - 5);
-    if (wr < 40) return min(85, base + 10);
+    if (wr >= 60) return max(40, base - 5).toInt();
+    if (wr < 40) return min(85, base + 10).toInt();
     return base;
   }
 }
@@ -269,8 +270,8 @@ class PumpScanner {
     else if (vs > 1.2) score += 10;
 
     final (low, mid, up) = Indicators.bollinger(closes, 20, 2);
-    if (low != null && mid != 0) {
-      final width = (up! - low) / mid;
+    if (low != null && mid != null && up != null && mid != 0) {
+      final width = (up - low) / mid;
       if (width < 0.02) score += 20;
       else if (width < 0.04) score += 10;
     }
