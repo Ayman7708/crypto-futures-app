@@ -27,15 +27,19 @@ class CandleService {
         final url = Uri.parse('$base?symbol=$symbol&interval=$interval&limit=$limit');
         final res = await http.get(url).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
-          final List data = json.decode(res.body);
-          return data.map((k) => Candle(
-            time: k[0] as int,
-            open: double.parse(k[1].toString()),
-            high: double.parse(k[2].toString()),
-            low: double.parse(k[3].toString()),
-            close: double.parse(k[4].toString()),
-            volume: double.parse(k[5].toString()),
-          )).toList();
+          final List<dynamic> data = json.decode(res.body);
+          final List<Kline> result = [];
+          for (final item in data) {
+            result.add(Kline(
+              time: item[0] as int,
+              open: double.parse(item[1].toString()),
+              high: double.parse(item[2].toString()),
+              low: double.parse(item[3].toString()),
+              close: double.parse(item[4].toString()),
+              volume: double.parse(item[5].toString()),
+            ));
+          }
+          return result;
         }
       } catch (e) {
         debugPrint('Candle fail $base: $e');
