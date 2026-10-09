@@ -16,30 +16,46 @@ jobs:
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.3'
-          channel: 'stable'
+          channel: stable
           cache: true
 
       - name: Create Android scaffolding
         run: |
           flutter create --project-name crypto_trade_bot --org com.cryptobot --platforms android /tmp/scaffold
           cp -r /tmp/scaffold/android .
-          cp /tmp/scaffold/.metadata . 2>/dev/null || true
-- name: Patch AndroidManifest (permissions)
-  run: |
-    MANIFEST=android/app/src/main/AndroidManifest.xml
-    # Add INTERNET and other permissions before <application
-    sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n    <application|' "$MANIFEST"
-    echo "===== Final AndroidManifest ====="
-    cat "$MANIFEST"
+          cp /tmp/scaffold/.metadata . || true
 
-      - name: Setup signing (build.gradle)
+      - name: Add INTERNET permission
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/><application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/><application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.WAKE_LOCK"/><application|' "$MANIFEST"
+          echo "=== Manifest after patch ==="
+          cat "$MANIFEST"
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/cryptobot.jks
+
+      - name: Create key.properties
+        run: |
+          cat > android/key.properties << KEYEOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=cryptobot.jks
+          KEYEOF
+
+      - name: Patch build.gradle for signing
         run: |
           cat > android/app/build.gradle << 'GRADLE_EOF'
           def localProperties = new Properties()
@@ -115,19 +131,6 @@ jobs:
 
           flutter { source '../..' }
           GRADLE_EOF
-
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/cryptobot.jks
-
-      - name: Create key.properties
-        run: |
-          cat > android/key.properties <<EOF
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=cryptobot.jks
-          EOF
 
       - name: Install dependencies
         run: flutter pub get
