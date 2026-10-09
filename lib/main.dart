@@ -291,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       price: price, pnl: 0, time: DateTime.now(), isScalp: isScalp,
     ));
     NotificationService.show(
-      isScalp ? 'Scalp' : 'Open',
+      isScalp ? 'إسكالبينج' : 'مفتوح',
       '$symbol @ \$${price.toStringAsFixed(2)} SL: \$${sl.toStringAsFixed(2)} TP: \$${tp.toStringAsFixed(2)}',
     );
     if (_trades.length > 200) _trades.removeLast();
@@ -321,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Crypto Bot Pro v2', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        title: const Text('بوت التداول برو v2', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
         actions: [
           if (_lastError.isNotEmpty)
             const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.wifi_off, color: Color(0xFFEF4444), size: 20)),
@@ -333,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 color: _running ? const Color(0xFF4ADE80) : const Color(0xFFEF4444),
               )),
               const SizedBox(width: 6),
-              Text(_running ? 'ON' : 'OFF', style: const TextStyle(fontSize: 12)),
+              Text(_running ? 'يعمل' : 'متوقف', style: const TextStyle(fontSize: 12)),
             ]),
           ),
         ],
@@ -342,9 +342,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           indicatorColor: const Color(0xFF4ADE80),
           labelColor: const Color(0xFF4ADE80), unselectedLabelColor: Colors.white54,
           tabs: const [
-            Tab(text: 'Main'), Tab(text: 'Analysis'),
-            Tab(text: 'History'), Tab(text: 'Backtest'), Tab(text: 'Testing'),
-            Tab(text: 'Approved'), Tab(text: 'Settings'),
+            Tab(text: 'الرئيسية'), Tab(text: 'التحليل'),
+            Tab(text: 'السجل'), Tab(text: 'الاختبار'), Tab(text: 'اختبار المؤشرات'),
+            Tab(text: 'المعتمدة'), Tab(text: 'الإعدادات'),
           ],
         ),
       ),
@@ -372,12 +372,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Balance', style: TextStyle(color: Colors.white54, fontSize: 11)),
+          const Text('الرصيد', style: TextStyle(color: Colors.white54, fontSize: 11)),
           Text('\$${_balance.toStringAsFixed(2)}',
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF4ADE80))),
         ]),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          const Text('PnL', style: TextStyle(color: Colors.white54, fontSize: 11)),
+          const Text('الربح / الخسارة', style: TextStyle(color: Colors.white54, fontSize: 11)),
           Text('${pnl >= 0 ? '+' : ''}\$${pnl.toStringAsFixed(2)}',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
           Text('${pnl >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%', style: TextStyle(fontSize: 11, color: color)),
@@ -417,7 +417,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 _chip('RSI', rsi != null ? rsi.toStringAsFixed(1) : '-'),
                 _chip('SMA$_smaShort', ss != null ? ss.toStringAsFixed(0) : '-'),
                 _chip('SMA$_smaLong', sl != null ? sl.toStringAsFixed(0) : '-'),
-                if (scalp != null) _chip('Scalp', '${scalp.score}%',
+                if (scalp != null) _chip('إسكالبينج', '${scalp.score}%',
                     color: scalp.score >= _scalpThreshold ? const Color(0xFF4ADE80) : null),
               ]),
               if (pos != null) ...[
@@ -430,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       color: pos.isScalp ? const Color(0xFFF59E0B) : const Color(0xFF4ADE80), width: 3)),
                   ),
                   child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text(pos.isScalp ? 'Scalp' : 'Open',
+                    Text(pos.isScalp ? 'إسكالبينج' : 'مفتوح',
                         style: TextStyle(color: pos.isScalp ? const Color(0xFFF59E0B) : const Color(0xFF4ADE80), fontSize: 12)),
                     Text('E: \$${pos.entry.toStringAsFixed(2)} | PnL: ${pos.pnl(price ?? pos.entry) >= 0 ? "+" : ""}\$${pos.pnl(price ?? pos.entry).toStringAsFixed(2)}',
                         style: TextStyle(fontSize: 11,
@@ -476,15 +476,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             const SizedBox(height: 8),
             _indRow('RSI (14)', rsi?.toStringAsFixed(2) ?? '-'),
             _indRow('MACD', macd?.toStringAsFixed(2) ?? '-'),
-            _indRow('Signal', signal?.toStringAsFixed(2) ?? '-'),
-            _indRow('Histogram', histogram?.toStringAsFixed(2) ?? '-'),
-            _indRow('BB L/M/U',
+            _indRow('الإشارة', signal?.toStringAsFixed(2) ?? '-'),
+            _indRow('الهستوجرام', histogram?.toStringAsFixed(2) ?? '-'),
+            _indRow('بولنجر L/M/U',
                 lowBB != null ? '${lowBB.toStringAsFixed(0)}/${midBB!.toStringAsFixed(0)}/${upBB!.toStringAsFixed(0)}' : '-'),
-            _indRow('Stochastic', stoch?.toStringAsFixed(1) ?? '-'),
+            _indRow('الستوكاستيك', stoch?.toStringAsFixed(1) ?? '-'),
             const Divider(color: Color(0xFF1E2838)),
             if (scalp != null) ...[
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const Text('Scalp Score', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const Text('درجة الإسكالبينج', style: TextStyle(color: Colors.white70, fontSize: 12)),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -527,19 +527,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildTrades() {
     if (_trades.isEmpty) {
-      return const Center(child: Text('No trades yet', style: TextStyle(color: Color(0xFF4B5563))));
+      return const Center(child: Text('لا توجد صفقات بعد', style: TextStyle(color: Color(0xFF4B5563))));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(10), itemCount: _trades.length,
       itemBuilder: (context, i) {
         final t = _trades[i];
         Color color = const Color(0xFF4ADE80);
-        String label = 'BUY';
-        if (t.action == 'SELL') { color = const Color(0xFFEF4444); label = 'SELL'; }
-        if (t.action == 'SCALP_BUY') { color = const Color(0xFFF59E0B); label = 'SCALP'; }
-        if (t.action == 'STOP_LOSS') { color = const Color(0xFFDC2626); label = 'SL'; }
-        if (t.action == 'TAKE_PROFIT') { color = const Color(0xFF16A34A); label = 'TP'; }
-        if (t.action == 'LIQUIDATED') { color = const Color(0xFFF59E0B); label = 'LIQ'; }
+        String label = 'شراء';
+        if (t.action == 'SELL') { color = const Color(0xFFEF4444); label = 'بيع'; }
+        if (t.action == 'SCALP_BUY') { color = const Color(0xFFF59E0B); label = 'إسكالبينج'; }
+        if (t.action == 'STOP_LOSS') { color = const Color(0xFFDC2626); label = 'وقف خسارة'; }
+        if (t.action == 'TAKE_PROFIT') { color = const Color(0xFF16A34A); label = 'جني ربح'; }
+        if (t.action == 'LIQUIDATED') { color = const Color(0xFFF59E0B); label = 'تصفية'; }
         return Container(
           margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -565,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text('Backtest on collected data', style: TextStyle(color: Colors.white70, fontSize: 13)),
+        const Text('الاختبار على البيانات المجمعة', style: TextStyle(color: Colors.white70, fontSize: 13)),
         const SizedBox(height: 12),
         for (final sym in SYMBOLS)
           Container(
@@ -589,12 +589,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(sym, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 6),
-                _indRow('Trades', '${r.trades}'),
-                _indRow('Wins', '${r.wins} (${r.winRate.toStringAsFixed(1)}%)'),
-                _indRow('Losses', '${r.losses}'),
-                _indRow('Final', '\$${r.finalBalance.toStringAsFixed(2)}'),
-                _indRow('Profit', '${r.profitPct >= 0 ? '+' : ''}${r.profitPct.toStringAsFixed(2)}%'),
-                _indRow('Max DD', '${r.maxDrawdown.toStringAsFixed(2)}%'),
+                _indRow('الصفقات', '${r.trades}'),
+                _indRow('الرابحة', '${r.wins} (${r.winRate.toStringAsFixed(1)}%)'),
+                _indRow('الخاسرة', '${r.losses}'),
+                _indRow('النهائي', '\$${r.finalBalance.toStringAsFixed(2)}'),
+                _indRow('الربح', '${r.profitPct >= 0 ? '+' : ''}${r.profitPct.toStringAsFixed(2)}%'),
+                _indRow('أقصى تراجع', '${r.maxDrawdown.toStringAsFixed(2)}%'),
               ]);
             }),
           ),
@@ -639,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   style: const TextStyle(color: Color(0xFF60A5FA), fontSize: 11)),
               TextButton(
                 onPressed: () => setState(() { ind.approved = !ind.approved; _saveState(); }),
-                child: Text(ind.approved ? 'Remove' : 'Approve',
+                child: Text(ind.approved ? 'إزالة' : 'اعتماد',
                     style: TextStyle(color: ind.approved ? const Color(0xFFEF4444) : const Color(0xFF4ADE80), fontSize: 12)),
               ),
             ]),
@@ -655,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(20),
-          child: Text('No approved indicators yet.',
+          child: Text('لا توجد مؤشرات معتمدة بعد',
               textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF4B5563))),
         ),
       );
@@ -691,63 +691,63 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _sectionTitle('Risk Management'),
-        _settingRow('Initial Capital', _initialCapital.toStringAsFixed(0),
+        _sectionTitle('إدارة المخاطر'),
+        _settingRow('رأس المال الأولي', _initialCapital.toStringAsFixed(0),
             (v) => setState(() => _initialCapital = double.tryParse(v) ?? _initialCapital)),
-        _settingRow('Margin per Trade', _marginPerTrade.toStringAsFixed(0),
+        _settingRow('الهامش لكل صفقة', _marginPerTrade.toStringAsFixed(0),
             (v) => setState(() => _marginPerTrade = double.tryParse(v) ?? _marginPerTrade)),
-        _settingRow('Leverage', _leverage.toString(),
+        _settingRow('الرافعة المالية', _leverage.toString(),
             (v) => setState(() => _leverage = int.tryParse(v) ?? _leverage)),
-        _settingRow('Stop Loss %', _slPercent.toStringAsFixed(2),
+        _settingRow('وقف الخسارة %', _slPercent.toStringAsFixed(2),
             (v) => setState(() => _slPercent = double.tryParse(v) ?? _slPercent)),
-        _settingRow('Take Profit %', _tpPercent.toStringAsFixed(2),
+        _settingRow('جني الربح %', _tpPercent.toStringAsFixed(2),
             (v) => setState(() => _tpPercent = double.tryParse(v) ?? _tpPercent)),
         const SizedBox(height: 16),
-        _sectionTitle('Indicators'),
-        _settingRow('RSI Buy', _rsiBuy.toString(),
+        _sectionTitle('المؤشرات'),
+        _settingRow('RSI الشراء', _rsiBuy.toString(),
             (v) => setState(() => _rsiBuy = int.tryParse(v) ?? _rsiBuy)),
-        _settingRow('RSI Sell', _rsiSell.toString(),
+        _settingRow('RSI البيع', _rsiSell.toString(),
             (v) => setState(() => _rsiSell = int.tryParse(v) ?? _rsiSell)),
-        _settingRow('SMA Short', _smaShort.toString(),
+        _settingRow('SMA القصير', _smaShort.toString(),
             (v) => setState(() => _smaShort = int.tryParse(v) ?? _smaShort)),
-        _settingRow('SMA Long', _smaLong.toString(),
+        _settingRow('SMA الطويل', _smaLong.toString(),
             (v) => setState(() => _smaLong = int.tryParse(v) ?? _smaLong)),
         const SizedBox(height: 16),
-        _sectionTitle('Trading Mode'),
+        _sectionTitle('وضع التداول'),
         SwitchListTile(
           value: _longBias, onChanged: (v) => setState(() => _longBias = v),
-          title: const Text('LONG Bias (Buy heavy)', style: TextStyle(fontSize: 14)),
-          subtitle: const Text('Prefer opening BUY positions', style: TextStyle(fontSize: 11)),
+          title: const Text('تفضيل الشراء (LONG Bias)', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('تفضيل فتح صفقات الشراء', style: TextStyle(fontSize: 11)),
           activeColor: const Color(0xFF4ADE80),
         ),
         const SizedBox(height: 8),
-        _sectionTitle('Scalping'),
+        _sectionTitle('الإسكالبينج'),
         SwitchListTile(
           value: _scalpEnabled, onChanged: (v) => setState(() => _scalpEnabled = v),
-          title: const Text('Auto Scalping', style: TextStyle(fontSize: 14)),
+          title: const Text('الإسكالبينج التلقائي', style: TextStyle(fontSize: 14)),
           activeColor: const Color(0xFF4ADE80),
         ),
-        _settingRow('Min Score', '$_scalpThreshold/100',
+        _settingRow('الحد الأدنى للدرجة', '$_scalpThreshold/100',
             (v) => setState(() => _scalpThreshold = int.tryParse(v) ?? _scalpThreshold)),
         const SizedBox(height: 16),
-        _sectionTitle('Binance API'),
-        _settingRow('API Key', _apiKey.isEmpty ? 'Not set' : '***${_apiKey.substring(_apiKey.length > 4 ? _apiKey.length - 4 : 0)}',
+        _sectionTitle('ربط Binance'),
+        _settingRow('مفتاح API', _apiKey.isEmpty ? 'غير مضاف' : '***${_apiKey.substring(_apiKey.length > 4 ? _apiKey.length - 4 : 0)}',
             (v) => setState(() => _apiKey = v)),
-        _settingRow('API Secret', _apiSecret.isEmpty ? 'Not set' : '******',
+        _settingRow('سر API', _apiSecret.isEmpty ? 'غير مضاف' : '******',
             (v) => setState(() => _apiSecret = v)),
         const SizedBox(height: 6),
-        const Text('Simulation mode. Live trading coming soon.',
+        const Text('وضع المحاكاة. التداول الحي قادم قريباً',
             style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11)),
         const SizedBox(height: 24),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E2838), padding: const EdgeInsets.all(14)),
           icon: const Icon(Icons.save, color: Color(0xFF4ADE80)),
-          label: const Text('Save Settings', style: TextStyle(color: Colors.white)),
+          label: const Text('حفظ الإعدادات', style: TextStyle(color: Colors.white)),
           onPressed: () async {
             await _saveState();
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Saved'), backgroundColor: Color(0xFF16A34A)),
+                const SnackBar(content: Text('تم الحفظ'), backgroundColor: Color(0xFF16A34A)),
               );
             }
           },
@@ -756,18 +756,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), padding: const EdgeInsets.all(14)),
           icon: const Icon(Icons.restart_alt, color: Colors.white),
-          label: const Text('Reset All', style: TextStyle(color: Colors.white)),
+          label: const Text('إعادة تعيين الكل', style: TextStyle(color: Colors.white)),
           onPressed: () async {
             final ok = await showDialog<bool>(
               context: context,
               builder: (_) => AlertDialog(
                 backgroundColor: const Color(0xFF131A26),
-                title: const Text('Reset', style: TextStyle(color: Colors.white)),
-                content: const Text('Delete all trades and reset balance?', style: TextStyle(color: Colors.white70)),
+                title: const Text('إعادة تعيين', style: TextStyle(color: Colors.white)),
+                content: const Text('حذف كل الصفقات وإعادة الرصيد؟', style: TextStyle(color: Colors.white70)),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
                   TextButton(onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Yes', style: TextStyle(color: Color(0xFFEF4444)))),
+                      child: const Text('نعم', style: TextStyle(color: Color(0xFFEF4444)))),
                 ],
               ),
             );
@@ -829,7 +829,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           TextButton(onPressed: () => Navigator.pop(context, c.text),
               child: const Text('Save', style: TextStyle(color: Color(0xFF4ADE80)))),
         ],
@@ -850,7 +850,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: _toggleBot,
-          child: Text(_running ? 'STOP BOT' : 'START BOT',
+          child: Text(_running ? 'إيقاف البوت' : 'بدء البوت',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
         ),
       ),
