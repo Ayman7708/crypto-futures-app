@@ -31,12 +31,13 @@ jobs:
           flutter create --project-name crypto_trade_bot --org com.cryptobot --platforms android /tmp/scaffold
           cp -r /tmp/scaffold/android .
           cp /tmp/scaffold/.metadata . 2>/dev/null || true
-
-      - name: Patch AndroidManifest (permissions)
-        run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-          # Add permissions before <application
-          sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n    <application|' "$MANIFEST"
+- name: Patch AndroidManifest (permissions)
+  run: |
+    MANIFEST=android/app/src/main/AndroidManifest.xml
+    # Add INTERNET and other permissions before <application
+    sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n    <application|' "$MANIFEST"
+    echo "===== Final AndroidManifest ====="
+    cat "$MANIFEST"
 
       - name: Setup signing (build.gradle)
         run: |
