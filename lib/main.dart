@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'engine.dart';
 import 'services.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.init();
+  NotificationService.init().catchError((e) => debugPrint('Notif init: $e'));
   runApp(const CryptoBotApp());
 }
 
@@ -81,8 +81,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _highHistory[s] = [];
       _lowHistory[s] = [];
     }
-    _loadState();
-  }
+     _loadState();
+  // Failsafe: افتح الواجهة بعد 6 ثوانٍ كحد أقصى
+  Timer(const Duration(seconds: 6), () {
+    if (!_loaded && mounted) setState(() => _loaded = true);
+  });
+}
 
   @override
   void dispose() {
@@ -93,7 +97,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _loadState() async {
-    final data = await StorageService.loadAll();
+    final data = await StorageService.loadAll();Future<void> _loadState() async {
+  Map<String, dynamic>? data;
+  try {
+    data = await StorageService.loadAll()
+        .timeout(const Duration(seconds: 4));
+  } catch (e) {
+    debugPrint('Load error: $e');
+    data = null;
+  }
     if (data != null && mounted) {
       setState(() {
         _balance = (data['balance'] as num).toDouble();
