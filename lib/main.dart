@@ -5,7 +5,7 @@ import 'services.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  NotificationService.init().catchError((e) => debugPrint('Notif init: $e'));
+  NotificationService.init().catchError((e) => debugPrint('Notif: $e'));
   runApp(const CryptoBotApp());
 }
 
@@ -68,7 +68,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   String _apiKey = '';
   String _apiSecret = '';
   String _lastError = '';
-
   Timer? _timer;
 
   @override
@@ -81,12 +80,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _highHistory[s] = [];
       _lowHistory[s] = [];
     }
-     _loadState();
-  // Failsafe: افتح الواجهة بعد 6 ثوانٍ كحد أقصى
-  Timer(const Duration(seconds: 6), () {
-    if (!_loaded && mounted) setState(() => _loaded = true);
-  });
-}
+    _loadState();
+    Timer(const Duration(seconds: 6), () {
+      if (!_loaded && mounted) setState(() => _loaded = true);
+    });
+  }
 
   @override
   void dispose() {
@@ -97,18 +95,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _loadState() async {
-    final data = await StorageService.loadAll();Future<void> _loadState() async {
-  Map<String, dynamic>? data;
-  try {
-    data = await StorageService.loadAll()
-        .timeout(const Duration(seconds: 4));
-  } catch (e) {
-    debugPrint('Load error: $e');
-    data = null;
-  }
+    Map<String, dynamic>? data;
+    try {
+      data = await StorageService.loadAll().timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('Load error: $e');
+      data = null;
+    }
     if (data != null && mounted) {
       setState(() {
-        _balance = (data['balance'] as num).toDouble();
+        _balance = (data!['balance'] as num).toDouble();
         final s = data['settings'] as Map<String, dynamic>;
         _initialCapital = (s['initialCapital'] as num?)?.toDouble() ?? 1000;
         _marginPerTrade = (s['margin'] as num?)?.toDouble() ?? 50;
@@ -123,26 +119,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _scalpEnabled = (s['scalpEnabled'] as bool?) ?? true;
         _apiKey = (s['apiKey'] as String?) ?? '';
         _apiSecret = (s['apiSecret'] as String?) ?? '';
-
         final hist = data['history'] as Map<String, dynamic>;
         hist.forEach((k, v) {
           _priceHistory[k] = (v as List).map((e) => (e as num).toDouble()).toList();
         });
-
         final posRaw = data['positions'] as Map<String, dynamic>;
         posRaw.forEach((k, v) {
           _positions[k] = Position(
-            symbol: k,
-            entry: (v['entry'] as num).toDouble(),
-            size: (v['size'] as num).toDouble(),
-            margin: (v['margin'] as num).toDouble(),
-            stopLoss: (v['sl'] as num).toDouble(),
-            takeProfit: (v['tp'] as num).toDouble(),
-            leverage: (v['leverage'] as num).toInt(),
-            isScalp: v['isScalp'] ?? false,
+            symbol: k, entry: (v['entry'] as num).toDouble(),
+            size: (v['size'] as num).toDouble(), margin: (v['margin'] as num).toDouble(),
+            stopLoss: (v['sl'] as num).toDouble(), takeProfit: (v['tp'] as num).toDouble(),
+            leverage: (v['leverage'] as num).toInt(), isScalp: v['isScalp'] ?? false,
           );
         });
-
         final tr = data['trades'] as List;
         for (final t in tr) {
           _trades.add(TradeRecord.fromJson(t as Map<String, dynamic>));
@@ -150,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _loaded = true;
       });
     } else {
-      setState(() => _loaded = true);
+      if (mounted) setState(() => _loaded = true);
     }
   }
 
@@ -163,8 +152,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       };
     });
     await StorageService.saveAll(
-      balance: _balance,
-      positions: posMap,
+      balance: _balance, positions: posMap,
       trades: _trades.map((t) => t.toJson()).toList(),
       settings: {
         'initialCapital': _initialCapital, 'margin': _marginPerTrade,
@@ -191,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Future<void> _tick() async {
     final prices = await ApiService.fetchPrices(SYMBOLS);
     if (prices == null) {
-      setState(() => _lastError = 'فشل الاتصال بـ Binance API');
+      if (mounted) setState(() => _lastError = 'API error');
       return;
     }
     if (!mounted) return;
@@ -218,59 +206,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _process(String symbol, double price) {
     final hist = _priceHistory[symbol]!;
     if (hist.length < 30) return;
-
     final pos = _positions[symbol];
-
-    // SL / TP check
     if (pos != null) {
-      if (price <= pos.stopLoss) {
-        _closePosition(symbol, price, 'STOP_LOSS');
-        return;
-      }
-      if (price >= pos.takeProfit) {
-        _closePosition(symbol, price, 'TAKE_PROFIT');
-        return;
-      }
-      // Liquidation
+      if (price <= pos.stopLoss) { _closePosition(symbol, price, 'STOP_LOSS'); return; }
+      if (price >= pos.takeProfit) { _closePosition(symbol, price, 'TAKE_PROFIT'); return; }
       final liqPrice = pos.entry * (1 - 1 / pos.leverage);
-      if (price <= liqPrice) {
-        _closePosition(symbol, price, 'LIQUIDATED');
-        return;
-      }
+      if (price <= liqPrice) { _closePosition(symbol, price, 'LIQUIDATED'); return; }
     }
-
     final ss = Indicators.sma(hist, _smaShort);
     final sl = Indicators.sma(hist, _smaLong);
     final rsi = Indicators.rsi(hist, 14);
     if (ss == null || sl == null || rsi == null) return;
-
-    // Scalp analysis
     final scalp = ScalpAnalyzer.analyze(
       closes: hist, highs: _highHistory[symbol]!, lows: _lowHistory[symbol]!,
       smaShort: _smaShort, smaLong: _smaLong, rsiBuy: _rsiBuy,
     );
     _scalpSignals[symbol] = scalp;
-
     if (pos != null) {
-      // Exit if SMA crosses down and RSI overbought
-      if (ss < sl && rsi > _rsiSell) {
-        _closePosition(symbol, price, 'SELL');
-      }
+      if (ss < sl && rsi > _rsiSell) _closePosition(symbol, price, 'SELL');
       return;
     }
-
     if (_balance < _marginPerTrade) return;
-
-    // Scalp entry (priority)
     if (_scalpEnabled && scalp.direction == 'LONG' && scalp.score >= _scalpThreshold) {
       _openPosition(symbol, price, isScalp: true);
       return;
     }
-
-    // Normal entry
-    if (ss > sl && rsi < _rsiBuy) {
-      _openPosition(symbol, price, isScalp: false);
-    }
+    if (ss > sl && rsi < _rsiBuy) _openPosition(symbol, price, isScalp: false);
   }
 
   void _openPosition(String symbol, double price, {required bool isScalp}) {
@@ -287,8 +248,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       price: price, pnl: 0, time: DateTime.now(), isScalp: isScalp,
     ));
     NotificationService.show(
-      isScalp ? '⚡ صفقة إسكالبينج' : '🟢 فتح صفقة',
-      '$symbol @ \$${price.toStringAsFixed(2)}\nSL: \$${sl.toStringAsFixed(2)} | TP: \$${tp.toStringAsFixed(2)}',
+      isScalp ? 'Scalp' : 'Open',
+      '$symbol @ \$${price.toStringAsFixed(2)} SL: \$${sl.toStringAsFixed(2)} TP: \$${tp.toStringAsFixed(2)}',
     );
     if (_trades.length > 200) _trades.removeLast();
   }
@@ -303,41 +264,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       time: DateTime.now(), isScalp: pos.isScalp,
     ));
     _positions.remove(symbol);
-
-    String emoji = '🔴';
-    if (reason == 'TAKE_PROFIT') emoji = '🎯';
-    if (reason == 'STOP_LOSS') emoji = '🛑';
-    if (reason == 'LIQUIDATED') emoji = '💥';
-    if (reason == 'SELL') emoji = '🔵';
-
-    NotificationService.show(
-      '$emoji إغلاق صفقة $symbol',
-      'السبب: $reason\nPnL: ${pnl >= 0 ? "+" : ""}\$${pnl.toStringAsFixed(2)}',
-    );
+    NotificationService.show('Close $symbol', '$reason PnL: \$${pnl.toStringAsFixed(2)}');
     if (_trades.length > 200) _trades.removeLast();
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // keep running; real background requires foreground service
-    super.didChangeAppLifecycleState(state);
-  }
-
-  // ==================== UI ====================
-  @override
   Widget build(BuildContext context) {
     if (!_loaded) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        backgroundColor: Color(0xFF0A0E17),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF4ADE80))),
+      );
     }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Crypto Bot Pro v2', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
         actions: [
           if (_lastError.isNotEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Icon(Icons.wifi_off, color: Color(0xFFEF4444), size: 20),
-            ),
+            const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.wifi_off, color: Color(0xFFEF4444), size: 20)),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Row(children: [
@@ -346,32 +290,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 color: _running ? const Color(0xFF4ADE80) : const Color(0xFFEF4444),
               )),
               const SizedBox(width: 6),
-              Text(_running ? 'يعمل' : 'متوقف', style: const TextStyle(fontSize: 12)),
+              Text(_running ? 'ON' : 'OFF', style: const TextStyle(fontSize: 12)),
             ]),
           ),
         ],
         bottom: TabBar(
           controller: _tabs, isScrollable: true,
           indicatorColor: const Color(0xFF4ADE80),
-          labelColor: const Color(0xFF4ADE80),
-          unselectedLabelColor: Colors.white54,
+          labelColor: const Color(0xFF4ADE80), unselectedLabelColor: Colors.white54,
           tabs: const [
-            Tab(text: 'الرئيسية'),
-            Tab(text: 'التحليل'),
-            Tab(text: 'السجل'),
-            Tab(text: 'الاختبار'),
-            Tab(text: 'الإعدادات'),
+            Tab(text: 'Main'), Tab(text: 'Analysis'),
+            Tab(text: 'History'), Tab(text: 'Backtest'), Tab(text: 'Settings'),
           ],
         ),
       ),
       body: Column(children: [
         _buildBalanceBar(),
         Expanded(child: TabBarView(controller: _tabs, children: [
-          _buildDashboard(),
-          _buildAnalytics(),
-          _buildTrades(),
-          _buildBacktest(),
-          _buildSettings(),
+          _buildDashboard(), _buildAnalytics(), _buildTrades(),
+          _buildBacktest(), _buildSettings(),
         ])),
         _buildStartButton(),
       ]),
@@ -390,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('الرصيد', style: TextStyle(color: Colors.white54, fontSize: 11)),
+          const Text('Balance', style: TextStyle(color: Colors.white54, fontSize: 11)),
           Text('\$${_balance.toStringAsFixed(2)}',
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF4ADE80))),
         ]),
@@ -398,8 +335,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const Text('PnL', style: TextStyle(color: Colors.white54, fontSize: 11)),
           Text('${pnl >= 0 ? '+' : ''}\$${pnl.toStringAsFixed(2)}',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-          Text('${pnl >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%',
-              style: TextStyle(fontSize: 11, color: color)),
+          Text('${pnl >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%', style: TextStyle(fontSize: 11, color: color)),
         ]),
       ]),
     );
@@ -409,8 +345,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return RefreshIndicator(
       onRefresh: _tick,
       child: ListView.builder(
-        padding: const EdgeInsets.all(10),
-        itemCount: SYMBOLS.length,
+        padding: const EdgeInsets.all(10), itemCount: SYMBOLS.length,
         itemBuilder: (context, i) {
           final sym = SYMBOLS[i];
           final price = _livePrices[sym];
@@ -420,13 +355,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           final sl = Indicators.sma(hist, _smaLong);
           final pos = _positions[sym];
           final scalp = _scalpSignals[sym];
-
           return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF131A26),
-              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFF1E2838)),
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -437,9 +369,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ]),
               const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 4, children: [
-                _chip('RSI', rsi != null ? rsi.toStringAsFixed(1) : '—'),
-                _chip('SMA$_smaShort', ss != null ? ss.toStringAsFixed(0) : '—'),
-                _chip('SMA$_smaLong', sl != null ? sl.toStringAsFixed(0) : '—'),
+                _chip('RSI', rsi != null ? rsi.toStringAsFixed(1) : '-'),
+                _chip('SMA$_smaShort', ss != null ? ss.toStringAsFixed(0) : '-'),
+                _chip('SMA$_smaLong', sl != null ? sl.toStringAsFixed(0) : '-'),
                 if (scalp != null) _chip('Scalp', '${scalp.score}%',
                     color: scalp.score >= _scalpThreshold ? const Color(0xFF4ADE80) : null),
               ]),
@@ -450,14 +382,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A2332),
                     border: Border(right: BorderSide(
-                      color: pos.isScalp ? const Color(0xFFF59E0B) : const Color(0xFF4ADE80),
-                      width: 3,
-                    )),
+                      color: pos.isScalp ? const Color(0xFFF59E0B) : const Color(0xFF4ADE80), width: 3)),
                   ),
                   child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text(pos.isScalp ? '⚡ إسكالبينج' : 'مركز مفتوح',
+                    Text(pos.isScalp ? 'Scalp' : 'Open',
                         style: TextStyle(color: pos.isScalp ? const Color(0xFFF59E0B) : const Color(0xFF4ADE80), fontSize: 12)),
-                    Text('D: \$${pos.entry.toStringAsFixed(2)} | PnL: ${pos.pnl(price ?? pos.entry) >= 0 ? "+" : ""}\$${pos.pnl(price ?? pos.entry).toStringAsFixed(2)}',
+                    Text('E: \$${pos.entry.toStringAsFixed(2)} | PnL: ${pos.pnl(price ?? pos.entry) >= 0 ? "+" : ""}\$${pos.pnl(price ?? pos.entry).toStringAsFixed(2)}',
                         style: TextStyle(fontSize: 11,
                             color: pos.pnl(price ?? pos.entry) >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFEF4444))),
                   ]),
@@ -475,50 +405,46 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(color: const Color(0xFF1A2332), borderRadius: BorderRadius.circular(6)),
       child: Text('$label: $value',
-          style: TextStyle(fontSize: 11, color: color ?? const Color(0xFF8892A6), fontWeight: color != null ? FontWeight.bold : FontWeight.normal)),
+          style: TextStyle(fontSize: 11, color: color ?? const Color(0xFF8892A6),
+              fontWeight: color != null ? FontWeight.bold : FontWeight.normal)),
     );
   }
 
   Widget _buildAnalytics() {
     return ListView.builder(
-      padding: const EdgeInsets.all(10),
-      itemCount: SYMBOLS.length,
+      padding: const EdgeInsets.all(10), itemCount: SYMBOLS.length,
       itemBuilder: (context, i) {
         final sym = SYMBOLS[i];
         final hist = _priceHistory[sym]!;
-        if (hist.length < 30) {
-          return _card('$sym', 'جاري تحليل البيانات... (${hist.length}/30)');
-        }
+        if (hist.length < 30) return _card('$sym', 'Analyzing... (${hist.length}/30)');
         final rsi = Indicators.rsi(hist, 14);
         final (macd, signal, histogram) = Indicators.macd(hist);
         final (lowBB, midBB, upBB) = Indicators.bollinger(hist);
         final stoch = Indicators.stochastic(_highHistory[sym]!, _lowHistory[sym]!, hist, 14);
         final scalp = _scalpSignals[sym];
-
         return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF1E2838))),
+          margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF1E2838))),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(sym, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 8),
-            _indRow('RSI (14)', rsi?.toStringAsFixed(2) ?? '—'),
-            _indRow('MACD', macd?.toStringAsFixed(2) ?? '—'),
-            _indRow('Signal', signal?.toStringAsFixed(2) ?? '—'),
-            _indRow('Histogram', histogram?.toStringAsFixed(2) ?? '—'),
-            _indRow('BB Lower / Mid / Upper',
-                lowBB != null ? '${lowBB.toStringAsFixed(0)} / ${midBB!.toStringAsFixed(0)} / ${upBB!.toStringAsFixed(0)}' : '—'),
-            _indRow('Stochastic', stoch?.toStringAsFixed(1) ?? '—'),
+            _indRow('RSI (14)', rsi?.toStringAsFixed(2) ?? '-'),
+            _indRow('MACD', macd?.toStringAsFixed(2) ?? '-'),
+            _indRow('Signal', signal?.toStringAsFixed(2) ?? '-'),
+            _indRow('Histogram', histogram?.toStringAsFixed(2) ?? '-'),
+            _indRow('BB L/M/U',
+                lowBB != null ? '${lowBB.toStringAsFixed(0)}/${midBB!.toStringAsFixed(0)}/${upBB!.toStringAsFixed(0)}' : '-'),
+            _indRow('Stochastic', stoch?.toStringAsFixed(1) ?? '-'),
             const Divider(color: Color(0xFF1E2838)),
             if (scalp != null) ...[
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('Scalp Score', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const Text('Scalp Score', style: TextStyle(color: Colors.white70, fontSize: 12)),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: scalp.score >= _scalpThreshold ? const Color(0xFF16A34A) : const Color(0xFF1A2332),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
+                    borderRadius: BorderRadius.circular(6)),
                   child: Text('${scalp.score}/100', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ]),
@@ -543,9 +469,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _card(String title, String body) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF1E2838))),
+      margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF1E2838))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         const SizedBox(height: 6),
@@ -556,38 +482,34 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildTrades() {
     if (_trades.isEmpty) {
-      return const Center(child: Text('لا توجد صفقات بعد', style: TextStyle(color: Color(0xFF4B5563))));
+      return const Center(child: Text('No trades yet', style: TextStyle(color: Color(0xFF4B5563))));
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(10),
-      itemCount: _trades.length,
+      padding: const EdgeInsets.all(10), itemCount: _trades.length,
       itemBuilder: (context, i) {
         final t = _trades[i];
         Color color = const Color(0xFF4ADE80);
-        String label = '🟢 شراء';
-        if (t.action == 'SELL') { color = const Color(0xFFEF4444); label = '🔵 بيع'; }
-        if (t.action == 'SCALP_BUY') { color = const Color(0xFFF59E0B); label = '⚡ إسكالبينج'; }
-        if (t.action == 'STOP_LOSS') { color = const Color(0xFFDC2626); label = '🛑 SL'; }
-        if (t.action == 'TAKE_PROFIT') { color = const Color(0xFF16A34A); label = '🎯 TP'; }
-        if (t.action == 'LIQUIDATED') { color = const Color(0xFFF59E0B); label = '💥 تصفية'; }
-
+        String label = 'BUY';
+        if (t.action == 'SELL') { color = const Color(0xFFEF4444); label = 'SELL'; }
+        if (t.action == 'SCALP_BUY') { color = const Color(0xFFF59E0B); label = 'SCALP'; }
+        if (t.action == 'STOP_LOSS') { color = const Color(0xFFDC2626); label = 'SL'; }
+        if (t.action == 'TAKE_PROFIT') { color = const Color(0xFF16A34A); label = 'TP'; }
+        if (t.action == 'LIQUIDATED') { color = const Color(0xFFF59E0B); label = 'LIQ'; }
         return Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.all(10),
+          margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A2332),
-            borderRadius: BorderRadius.circular(8),
-            border: Border(right: BorderSide(color: color, width: 3)),
-          ),
+            color: const Color(0xFF1A2332), borderRadius: BorderRadius.circular(8),
+            border: Border(right: BorderSide(color: color, width: 3))),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('$label ${t.symbol}', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
-              Text('${t.time.hour}:${t.time.minute.toString().padLeft(2, '0')} • \$${t.price.toStringAsFixed(2)}',
+              Text('${t.time.hour}:${t.time.minute.toString().padLeft(2, '0')} \$${t.price.toStringAsFixed(2)}',
                   style: const TextStyle(color: Color(0xFF8892A6), fontSize: 11)),
             ]),
             if (t.pnl != 0)
               Text('${t.pnl >= 0 ? '+' : ''}\$${t.pnl.toStringAsFixed(2)}',
-                  style: TextStyle(color: t.pnl >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: t.pnl >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFEF4444),
+                      fontWeight: FontWeight.bold)),
           ]),
         );
       },
@@ -598,20 +520,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text('اختبار الاستراتيجية على البيانات المجمعة', style: TextStyle(color: Colors.white70, fontSize: 13)),
+        const Text('Backtest on collected data', style: TextStyle(color: Colors.white70, fontSize: 13)),
         const SizedBox(height: 12),
         for (final sym in SYMBOLS)
           Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF1E2838))),
+            margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF1E2838))),
             child: Builder(builder: (context) {
               final hist = _priceHistory[sym]!;
               if (hist.length < 40) {
                 return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(sym, style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  Text('بيانات غير كافية (${hist.length}/40)', style: const TextStyle(color: Color(0xFF8892A6), fontSize: 11)),
+                  Text('Not enough data (${hist.length}/40)', style: const TextStyle(color: Color(0xFF8892A6), fontSize: 11)),
                 ]);
               }
               final r = Backtester.run(
@@ -622,12 +544,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(sym, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 6),
-                _indRow('عدد الصفقات', '${r.trades}'),
-                _indRow('الرابحة', '${r.wins} (${r.winRate.toStringAsFixed(1)}%)'),
-                _indRow('الخاسرة', '${r.losses}'),
-                _indRow('الرصيد النهائي', '\$${r.finalBalance.toStringAsFixed(2)}'),
-                _indRow('العائد', '${r.profitPct >= 0 ? '+' : ''}${r.profitPct.toStringAsFixed(2)}%'),
-                _indRow('أقصى تراجع', '${r.maxDrawdown.toStringAsFixed(2)}%'),
+                _indRow('Trades', '${r.trades}'),
+                _indRow('Wins', '${r.wins} (${r.winRate.toStringAsFixed(1)}%)'),
+                _indRow('Losses', '${r.losses}'),
+                _indRow('Final', '\$${r.finalBalance.toStringAsFixed(2)}'),
+                _indRow('Profit', '${r.profitPct >= 0 ? '+' : ''}${r.profitPct.toStringAsFixed(2)}%'),
+                _indRow('Max DD', '${r.maxDrawdown.toStringAsFixed(2)}%'),
               ]);
             }),
           ),
@@ -639,43 +561,55 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _sectionTitle('إدارة المخاطر'),
-        _settingRow('رأس المال الأولي', _initialCapital.toStringAsFixed(0), (v) => setState(() => _initialCapital = double.tryParse(v) ?? _initialCapital)),
-        _settingRow('الهامش لكل صفقة', _marginPerTrade.toStringAsFixed(0), (v) => setState(() => _marginPerTrade = double.tryParse(v) ?? _marginPerTrade)),
-        _settingRow('الرافعة المالية', _leverage.toString(), (v) => setState(() => _leverage = int.tryParse(v) ?? _leverage)),
-        _settingRow('وقف الخسارة SL %', _slPercent.toStringAsFixed(2), (v) => setState(() => _slPercent = double.tryParse(v) ?? _slPercent)),
-        _settingRow('جني الربح TP %', _tpPercent.toStringAsFixed(2), (v) => setState(() => _tpPercent = double.tryParse(v) ?? _tpPercent)),
+        _sectionTitle('Risk Management'),
+        _settingRow('Initial Capital', _initialCapital.toStringAsFixed(0),
+            (v) => setState(() => _initialCapital = double.tryParse(v) ?? _initialCapital)),
+        _settingRow('Margin per Trade', _marginPerTrade.toStringAsFixed(0),
+            (v) => setState(() => _marginPerTrade = double.tryParse(v) ?? _marginPerTrade)),
+        _settingRow('Leverage', _leverage.toString(),
+            (v) => setState(() => _leverage = int.tryParse(v) ?? _leverage)),
+        _settingRow('Stop Loss %', _slPercent.toStringAsFixed(2),
+            (v) => setState(() => _slPercent = double.tryParse(v) ?? _slPercent)),
+        _settingRow('Take Profit %', _tpPercent.toStringAsFixed(2),
+            (v) => setState(() => _tpPercent = double.tryParse(v) ?? _tpPercent)),
         const SizedBox(height: 16),
-        _sectionTitle('المؤشرات'),
-        _settingRow('RSI الشراء', _rsiBuy.toString(), (v) => setState(() => _rsiBuy = int.tryParse(v) ?? _rsiBuy)),
-        _settingRow('RSI البيع', _rsiSell.toString(), (v) => setState(() => _rsiSell = int.tryParse(v) ?? _rsiSell)),
-        _settingRow('SMA القصير', _smaShort.toString(), (v) => setState(() => _smaShort = int.tryParse(v) ?? _smaShort)),
-        _settingRow('SMA الطويل', _smaLong.toString(), (v) => setState(() => _smaLong = int.tryParse(v) ?? _smaLong)),
+        _sectionTitle('Indicators'),
+        _settingRow('RSI Buy', _rsiBuy.toString(),
+            (v) => setState(() => _rsiBuy = int.tryParse(v) ?? _rsiBuy)),
+        _settingRow('RSI Sell', _rsiSell.toString(),
+            (v) => setState(() => _rsiSell = int.tryParse(v) ?? _rsiSell)),
+        _settingRow('SMA Short', _smaShort.toString(),
+            (v) => setState(() => _smaShort = int.tryParse(v) ?? _smaShort)),
+        _settingRow('SMA Long', _smaLong.toString(),
+            (v) => setState(() => _smaLong = int.tryParse(v) ?? _smaLong)),
         const SizedBox(height: 16),
-        _sectionTitle('الإسكالبينج'),
+        _sectionTitle('Scalping'),
         SwitchListTile(
           value: _scalpEnabled, onChanged: (v) => setState(() => _scalpEnabled = v),
-          title: const Text('تفعيل الإسكالبينج التلقائي', style: TextStyle(fontSize: 14)),
+          title: const Text('Auto Scalping', style: TextStyle(fontSize: 14)),
           activeColor: const Color(0xFF4ADE80),
         ),
-        _settingRow('الحد الأدنى للتحليل', '$_scalpThreshold/100', (v) => setState(() => _scalpThreshold = int.tryParse(v) ?? _scalpThreshold)),
+        _settingRow('Min Score', '$_scalpThreshold/100',
+            (v) => setState(() => _scalpThreshold = int.tryParse(v) ?? _scalpThreshold)),
         const SizedBox(height: 16),
-        _sectionTitle('ربط الحساب (Binance Futures)'),
-        _settingRow('API Key', _apiKey.isEmpty ? 'غير مضاف' : '•••${_apiKey.substring(_apiKey.length > 4 ? _apiKey.length - 4 : 0)}', (v) => setState(() => _apiKey = v)),
-        _settingRow('API Secret', _apiSecret.isEmpty ? 'غير مضاف' : '••••••••', (v) => setState(() => _apiSecret = v)),
+        _sectionTitle('Binance API'),
+        _settingRow('API Key', _apiKey.isEmpty ? 'Not set' : '***${_apiKey.substring(_apiKey.length > 4 ? _apiKey.length - 4 : 0)}',
+            (v) => setState(() => _apiKey = v)),
+        _settingRow('API Secret', _apiSecret.isEmpty ? 'Not set' : '******',
+            (v) => setState(() => _apiSecret = v)),
         const SizedBox(height: 6),
-        const Text('⚠️ سيتم استخدام المفاتيح في تحديث قادم. حالياً التطبيق في وضع المحاكاة.',
+        const Text('Simulation mode. Live trading coming soon.',
             style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11)),
         const SizedBox(height: 24),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E2838), padding: const EdgeInsets.all(14)),
           icon: const Icon(Icons.save, color: Color(0xFF4ADE80)),
-          label: const Text('حفظ الإعدادات', style: TextStyle(color: Colors.white)),
+          label: const Text('Save Settings', style: TextStyle(color: Colors.white)),
           onPressed: () async {
             await _saveState();
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('✅ تم حفظ الإعدادات'), backgroundColor: Color(0xFF16A34A)),
+                const SnackBar(content: Text('Saved'), backgroundColor: Color(0xFF16A34A)),
               );
             }
           },
@@ -684,17 +618,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), padding: const EdgeInsets.all(14)),
           icon: const Icon(Icons.restart_alt, color: Colors.white),
-          label: const Text('إعادة تعيين كل شيء', style: TextStyle(color: Colors.white)),
+          label: const Text('Reset All', style: TextStyle(color: Colors.white)),
           onPressed: () async {
             final ok = await showDialog<bool>(
               context: context,
               builder: (_) => AlertDialog(
                 backgroundColor: const Color(0xFF131A26),
-                title: const Text('إعادة تعيين', style: TextStyle(color: Colors.white)),
-                content: const Text('سيتم مسح كل الصفقات والرصيد. متأكد؟', style: TextStyle(color: Colors.white70)),
+                title: const Text('Reset', style: TextStyle(color: Colors.white)),
+                content: const Text('Delete all trades and reset balance?', style: TextStyle(color: Colors.white70)),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-                  TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('نعم', style: TextStyle(color: Color(0xFFEF4444)))),
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Yes', style: TextStyle(color: Color(0xFFEF4444)))),
                 ],
               ),
             );
@@ -752,11 +687,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         content: TextField(
           controller: c, autofocus: true,
           style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(filled: true, fillColor: const Color(0xFF0A0E17), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+          decoration: InputDecoration(filled: true, fillColor: const Color(0xFF0A0E17),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
-          TextButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('حفظ', style: TextStyle(color: Color(0xFF4ADE80)))),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, c.text),
+              child: const Text('Save', style: TextStyle(color: Color(0xFF4ADE80)))),
         ],
       ),
     );
@@ -765,8 +702,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildStartButton() {
     return Container(
-      padding: const EdgeInsets.all(12),
-      color: const Color(0xFF131A26),
+      padding: const EdgeInsets.all(12), color: const Color(0xFF131A26),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
@@ -776,10 +712,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: _toggleBot,
-          child: Text(
-            _running ? '⏹ إيقاف البوت' : '▶ بدء البوت',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
+          child: Text(_running ? 'STOP BOT' : 'START BOT',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
         ),
       ),
     );
