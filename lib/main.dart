@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'engine.dart' hide Candle;
 import 'services.dart';
+import 'learning.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
@@ -79,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   String _apiSecret = '';
   String _lastError = '';
   Timer? _timer;
+  final LearningEngineV2 _learner = LearningEngineV2();
 
   @override
   void initState() {
@@ -153,6 +155,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           final list = (s['indicators'] as List).map((e) => IndicatorDef.fromJson(e as Map<String, dynamic>)).toList();
           if (list.isNotEmpty) _indicators = list;
         }
+        if (s['learner'] != null) {
+          _learner.loadFromJson(Map<String, dynamic>.from(s['learner']));
+        }
         final hist = data['history'] as Map<String, dynamic>;
         hist.forEach((k, v) {
           _priceHistory[k] = (v as List).map((e) => (e as num).toDouble()).toList();
@@ -196,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         'scalpEnabled': _scalpEnabled, 'apiKey': _apiKey, 'apiSecret': _apiSecret,
         'longBias': _longBias,
         'indicators': _indicators.map((i) => i.toJson()).toList(),
+        'learner': _learner.toJson(),
       },
     );
     await StorageService.saveHistory(_priceHistory);
@@ -237,6 +243,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           _volumeHistory[sym]!.removeAt(0);
         }
         _process(sym, last.close);
+      }
+      // Update market regime from BTC (reference)
+      if (_priceHistory['BTCUSDT'] != null && _priceHistory['BTCUSDT']!.length >= 30) {
+        _learner.detectRegime(
+          closes: _priceHistory['BTCUSDT']!,
+          highs: _highHistory['BTCUSDT']!,
+          lows: _lowHistory['BTCUSDT']!,
+        );
       }
     });
     _saveState();
@@ -305,8 +319,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
     if (_balance < _marginPerTrade) return;
 
+    final learnedOK = _learner.shouldEnter(signal.score);
     if (_longBias) {
-      if (signal.direction == 'LONG' && signal.score >= 45) {
+      if (signal.direction == 'LONG' && signal.score >= 45 && learnedOK) {
         _openPosition(symbol, price, isScalp: signal.score >= 70);
         for (final ind in _indicators) {
           ind.tests++;
@@ -379,6 +394,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final pos = _positions[symbol];
     if (pos == null) return;
     final pnl = (price - pos.entry) * pos.size;
+    final wasWin = pnl > 0;
+    final reason_str = _scalpSignals[symbol]?.reason ?? '';
+    _learner.updateFromTrade(
+      wasWin: wasWin, pnl: pnl,
+      signalReason: reason_str, direction: 'LONG',
+      activeIndicators: {'sma','ema','rsi','macd','bollinger','stoch','adx','vwap','supertrend','volume_surge'},
+    );
     _balance += pos.margin + pnl;
     _trades.insert(0, TradeRecord(
       symbol: symbol, action: reason, price: price, pnl: pnl,
@@ -574,6 +596,115 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildAnalytics() {
+    return ListView(
+      padding: const EdgeInsets.all(10),
+      children: [
+        _buildLearningCard(),
+        const SizedBox(height: 10),
+        ...SYMBOLS.map((sym) => _buildAnalyticsTile(sym)),
+      ],
+    );
+  }
+
+  Widget _buildLearningCard() {
+    final wr = _learner.totalTrades == 0 ? 0.0 : (_learner.totalWins / _learner.totalTrades * 100);
+    final top = _learner.getTopIndicators(limit: 3);
+    final worst = _learner.getWorstIndicators(limit: 3);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF1E2838), Color(0xFF131A26)]),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF60A5FA), width: 1),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('🧠 نظام التعلم الذكي',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF60A5FA))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A0E17), borderRadius: BorderRadius.circular(6)),
+            child: Text(_learner.regimeName,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF4ADE80))),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        _indRow('إجمالي الصفقات', '${_learner.totalTrades}'),
+        _indRow('الرابحة / الخاسرة', '${_learner.totalWins} / ${_learner.totalLosses}'),
+        _indRow('نسبة النجاح', '${wr.toStringAsFixed(1)}%'),
+        _indRow('عتبة الدخول الحالية', '${_learner.entryThreshold.toStringAsFixed(0)}/100'),
+        _indRow('الربح التراكمي', '\$${_learner.rollingPnL.toStringAsFixed(2)}'),
+        const Divider(color: Color(0xFF1E2838)),
+        if (top.isNotEmpty) ...[
+          const Text('🏆 أفضل المؤشرات:', style: TextStyle(color: Color(0xFF4ADE80), fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          for (final p in top)
+            _indRow(p.id, '${(p.winRate * 100).toStringAsFixed(0)}% (W:${p.wins} L:${p.losses})'),
+          const SizedBox(height: 8),
+        ],
+        if (worst.isNotEmpty) ...[
+          const Text('⚠️ أسوأ المؤشرات:', style: TextStyle(color: Color(0xFFEF4444), fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          for (final p in worst)
+            _indRow(p.id, '${(p.winRate * 100).toStringAsFixed(0)}% (W:${p.wins} L:${p.losses})'),
+        ],
+        if (_learner.losingPatterns.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('🚫 أنماط خاسرة محفوظة: ${_learner.losingPatterns.length}',
+              style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11)),
+        ],
+      ]),
+    );
+  }
+
+  Widget _buildAnalyticsTile(String sym) {
+    final hist = _priceHistory[sym]!;
+    if (hist.length < 30) return _card('$sym', 'Analyzing... (${hist.length}/30)');
+    final rsi = Indicators.rsi(hist, 14);
+    final (macd, signal, histogram) = Indicators.macd(hist);
+    final (lowBB, midBB, upBB) = Indicators.bollinger(hist);
+    final stoch = Indicators.stochastic(_highHistory[sym]!, _lowHistory[sym]!, hist, 14);
+    final scalp = _scalpSignals[sym];
+    final pump = _pumpScores[sym] ?? 0.0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF1E2838))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text(sym, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          if (pump >= 60)
+            Text('🔥 ${pump.toInt()}%', style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 12, fontWeight: FontWeight.bold)),
+        ]),
+        const SizedBox(height: 8),
+        _indRow('RSI (14)', rsi?.toStringAsFixed(2) ?? '-'),
+        _indRow('MACD', macd?.toStringAsFixed(2) ?? '-'),
+        _indRow('Signal', signal?.toStringAsFixed(2) ?? '-'),
+        _indRow('Histogram', histogram?.toStringAsFixed(2) ?? '-'),
+        _indRow('BB L/M/U',
+            lowBB != null ? '${lowBB.toStringAsFixed(0)}/${midBB!.toStringAsFixed(0)}/${upBB!.toStringAsFixed(0)}' : '-'),
+        _indRow('Stochastic', stoch?.toStringAsFixed(1) ?? '-'),
+        const Divider(color: Color(0xFF1E2838)),
+        if (scalp != null) ...[
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            const Text('Scalp Score', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: scalp.score >= _scalpThreshold ? const Color(0xFF16A34A) : const Color(0xFF1A2332),
+                borderRadius: BorderRadius.circular(6)),
+              child: Text('${scalp.score}/100', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(scalp.reason, style: const TextStyle(color: Color(0xFF8892A6), fontSize: 11)),
+        ],
+      ]),
+    );
+  }
+
+  Widget _buildAnalyticsOld() {
     return ListView.builder(
       padding: const EdgeInsets.all(10), itemCount: SYMBOLS.length,
       itemBuilder: (context, i) {
