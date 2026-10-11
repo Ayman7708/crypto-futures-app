@@ -56,10 +56,10 @@ class MarketRegimeAnalyzer {
     final altTrend = altCount > 0 ? altTrendSum / altCount : 0;
 
     // Altseason score: alts outperforming BTC = positive
-    final altseason = (altTrend - btcTrend).clamp(-100.0, 100.0);
+    final altseason = ((altTrend - btcTrend).clamp(-100.0, 100.0)).toDouble();
 
     // BTC dominance proxy: BTC vs alts
-    final dominanceProxy = (btcTrend - altTrend).clamp(-100.0, 100.0);
+    final dominanceProxy = ((btcTrend - altTrend).clamp(-100.0, 100.0)).toDouble();
 
     // Classify regime
     Regime regime;

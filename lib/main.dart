@@ -85,6 +85,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Timer? _timer;
   final LearningEngineV2 _learner = LearningEngineV2();
   final MasterEngine _master = MasterEngine();
+  MarketAnalysis? _marketAnalysis;
+  final int _maxPositions = 5;
+  final Map<String, DateTime> _lastTradeTime = {};
+  static const int _cooldownSeconds = 60;
 
   @override
   void initState() {
@@ -425,6 +429,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('تم إغلاق صفقة $symbol'), backgroundColor: const Color(0xFF16A34A)),
     );
+  }
+
+  bool _canTradeSymbol(String symbol) {
+    final last = _lastTradeTime[symbol];
+    if (last == null) return true;
+    return DateTime.now().difference(last).inSeconds >= _cooldownSeconds;
   }
 
   void _openPosition(String symbol, double price, {required bool isScalp, bool isLong = true}) {
