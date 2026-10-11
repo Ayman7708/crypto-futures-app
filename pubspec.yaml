@@ -15,5 +15,8 @@ dependencies:
   wakelock_plus: ^1.2.5
   cupertino_icons: ^1.0.6
 
+dependency_overrides:
+  package_info_plus: 8.0.0
+
 flutter:
   uses-material-design: true
