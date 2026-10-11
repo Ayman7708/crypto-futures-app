@@ -15,15 +15,23 @@ class Position {
   final double takeProfit;
   final int leverage;
   final bool isScalp;
+  final bool isLong;
   final DateTime openedAt;
 
   Position({
     required this.symbol, required this.entry, required this.size,
     required this.margin, required this.stopLoss, required this.takeProfit,
-    required this.leverage, this.isScalp = false, DateTime? openedAt,
+    required this.leverage, this.isScalp = false, this.isLong = true,
+    DateTime? openedAt,
   }) : openedAt = openedAt ?? DateTime.now();
 
-  double pnl(double current) => (current - entry) * size;
+  double pnl(double current) => isLong
+      ? (current - entry) * size
+      : (entry - current) * size;
+
+  double get liquidationPrice => isLong
+      ? entry * (1 - 1 / leverage)
+      : entry * (1 + 1 / leverage);
 }
 
 class TradeRecord {
