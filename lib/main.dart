@@ -5,6 +5,7 @@ import 'services.dart';
 import 'learning.dart';
 import 'strategies.dart';
 import 'market_regime.dart';
+import 'volatility.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
@@ -86,6 +87,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final LearningEngineV2 _learner = LearningEngineV2();
   final MasterEngine _master = MasterEngine();
   MarketAnalysis? _marketAnalysis;
+  final Map<String, VolatilityScore> _volScores = {};
+  bool _focusFastCoins = true;
+  int _topCoinCount = 10;
   final int _maxPositions = 5;
   final Map<String, DateTime> _lastTradeTime = {};
   static const int _cooldownSeconds = 60;
@@ -169,6 +173,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         if (s['master'] != null) {
           _master.loadFromJson(Map<String, dynamic>.from(s['master']));
         }
+        _focusFastCoins = (s['focusFast'] as bool?) ?? true;
+        _topCoinCount = (s['topCoinCount'] as num?)?.toInt() ?? 10;
         final hist = data['history'] as Map<String, dynamic>;
         hist.forEach((k, v) {
           _priceHistory[k] = (v as List).map((e) => (e as num).toDouble()).toList();
@@ -214,6 +220,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         'indicators': _indicators.map((i) => i.toJson()).toList(),
         'learner': _learner.toJson(),
         'master': _master.toJson(),
+        'focusFast': _focusFastCoins,
+        'topCoinCount': _topCoinCount,
       },
     );
     await StorageService.saveHistory(_priceHistory);
@@ -273,6 +281,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
         _marketAnalysis = MarketRegimeAnalyzer.analyze(
           btcCloses: btcHist, altCloses: altMap,
+        );
+      }
+      // Compute volatility score for every symbol
+      for (final sym in SYMBOLS) {
+        final h = _priceHistory[sym];
+        final hh = _highHistory[sym];
+        final ll = _lowHistory[sym];
+        final vv = _volumeHistory[sym];
+        if (h == null || hh == null || ll == null || vv == null) continue;
+        if (h.length < 20) continue;
+        _volScores[sym] = VolatilityRanker.analyze(
+          symbol: sym, closes: h, highs: hh, lows: ll, volumes: vv,
         );
       }
     });
@@ -373,10 +393,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     final canTakeMore = _positions.length < _maxPositions && _canTradeSymbol(symbol);
 
+    // Fast coins filter: only trade top N volatile coins if enabled
+    bool isTopCoin = true;
+    if (_focusFastCoins && _volScores.isNotEmpty) {
+      final top = VolatilityRanker.topSymbols(_volScores, _topCoinCount);
+      isTopCoin = top.contains(symbol);
+    }
+
     // Try LONG first (if bias allows)
     final longOK = signal.score >= effectiveThreshold &&
                    longMult > 0.5 &&
-                   learnedOK && canTakeMore;
+                   learnedOK && canTakeMore && isTopCoin;
     if (signal.direction == 'LONG' && longOK) {
       _openPosition(symbol, price, isScalp: signal.score >= 70, isLong: true);
       LearningEngine.updateWeights(_indicators, _trades);
@@ -387,7 +414,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final shortScore = signal.score; // Reuse same score logic in reverse
     final shortOK = shortScore >= effectiveThresholdShort &&
                     shortMult > 0.5 &&
-                    canTakeMore &&
+                    canTakeMore && isTopCoin &&
                     (regime == Regime.bearStrong ||
                      regime == Regime.bearWeak ||
                      (regime == Regime.neutral && shortMult >= 1.0));
@@ -588,7 +615,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text(sym, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                Row(children: [
+                  if (_volScores[sym] != null)
+                    Text('${VolatilityRanker.rankEmoji(_volScores[sym]!.rank)} ',
+                        style: const TextStyle(fontSize: 13)),
+                  Text(sym, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                ]),
                 Text(price != null ? '\$${price.toStringAsFixed(2)}' : '...',
                     style: const TextStyle(fontFamily: 'monospace', fontSize: 15, color: Color(0xFF60A5FA))),
               ]),
@@ -741,6 +773,33 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           final ll = _master.losses[s.name] ?? 0;
           return _indRow(s.name, 'W:${w.toStringAsFixed(2)} | ${ww}W/${ll}L');
         }),
+        if (_volScores.isNotEmpty) ...[
+          const Divider(color: Color(0xFF1E2838)),
+          const Text('🔥 ترتيب العملات حسب السرعة:',
+              style: TextStyle(color: Color(0xFFFF6B35), fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          ...(() {
+            final sorted = _volScores.values.toList()
+              ..sort((a, b) => b.opportunity.compareTo(a.opportunity));
+            return sorted.take(10).map((v) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(children: [
+                    Text(VolatilityRanker.rankEmoji(v.rank),
+                        style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
+                    Text(v.symbol.replaceAll('USDT', ''),
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ]),
+                  Text('${v.opportunity.toStringAsFixed(0)} | ATR:${v.atrPct.toStringAsFixed(2)}% | Vol:${v.volumeSurge.toStringAsFixed(1)}x',
+                      style: const TextStyle(color: Color(0xFF60A5FA), fontSize: 10, fontFamily: 'monospace')),
+                ],
+              ),
+            ));
+          })(),
+        ],
         if (_marketAnalysis != null) ...[
           const Divider(color: Color(0xFF1E2838)),
           const Text('🌍 حالة السوق العامة:',
@@ -1076,6 +1135,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           subtitle: const Text('تفضيل فتح صفقات الشراء', style: TextStyle(fontSize: 11)),
           activeColor: const Color(0xFF4ADE80),
         ),
+        const SizedBox(height: 8),
+        _sectionTitle('التركيز على العملات السريعة'),
+        SwitchListTile(
+          value: _focusFastCoins,
+          onChanged: (v) => setState(() => _focusFastCoins = v),
+          title: const Text('تفعيل التركيز على العملات السريعة', style: TextStyle(fontSize: 14)),
+          subtitle: const Text('يتداول فقط أعلى العملات تحركاً', style: TextStyle(fontSize: 11)),
+          activeColor: const Color(0xFFFF6B35),
+        ),
+        _settingRow('عدد العملات المُختارة', '$_topCoinCount من ${SYMBOLS.length}',
+            (v) => setState(() => _topCoinCount = int.tryParse(v) ?? _topCoinCount)),
         const SizedBox(height: 8),
         _sectionTitle('الإسكالبينج'),
         SwitchListTile(
