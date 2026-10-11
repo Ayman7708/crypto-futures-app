@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'engine.dart' hide Candle;
 import 'services.dart';
 import 'learning.dart';
+import 'strategies.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
@@ -73,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool _longBias = true;
   final Map<String, double> _pumpScores = {};
   final Map<String, ScalpSignal> _scalpSignals = {};
+  final Map<String, String> _masterTopStrategies = {};
   final List<TradeRecord> _trades = [];
   final Map<String, double> _livePrices = {};
 
@@ -81,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   String _lastError = '';
   Timer? _timer;
   final LearningEngineV2 _learner = LearningEngineV2();
+  final MasterEngine _master = MasterEngine();
 
   @override
   void initState() {
@@ -158,6 +161,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         if (s['learner'] != null) {
           _learner.loadFromJson(Map<String, dynamic>.from(s['learner']));
         }
+        if (s['master'] != null) {
+          _master.loadFromJson(Map<String, dynamic>.from(s['master']));
+        }
         final hist = data['history'] as Map<String, dynamic>;
         hist.forEach((k, v) {
           _priceHistory[k] = (v as List).map((e) => (e as num).toDouble()).toList();
@@ -202,6 +208,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         'longBias': _longBias,
         'indicators': _indicators.map((i) => i.toJson()).toList(),
         'learner': _learner.toJson(),
+        'master': _master.toJson(),
       },
     );
     await StorageService.saveHistory(_priceHistory);
@@ -402,6 +409,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       signalReason: reason_str, direction: 'LONG',
       activeIndicators: {'sma','ema','rsi','macd','bollinger','stoch','adx','vwap','supertrend','volume_surge'},
     );
+    // Update each master strategy weight
+    for (final s in _master.strategies) {
+      _master.updateFromTrade(s.name, wasWin);
+    }
     _balance += pos.margin + pnl;
     _trades.insert(0, TradeRecord(
       symbol: symbol, action: reason, price: price, pnl: pnl,
@@ -655,6 +666,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Text('🚫 أنماط خاسرة محفوظة: ${_learner.losingPatterns.length}',
               style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11)),
         ],
+        const Divider(color: Color(0xFF1E2838)),
+        const Text('⚙️ أوزان الاستراتيجيات:', style: TextStyle(color: Color(0xFF60A5FA), fontSize: 12, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        ..._master.strategies.map((s) {
+          final w = _master.weights[s.name] ?? 1.0;
+          final ww = _master.wins[s.name] ?? 0;
+          final ll = _master.losses[s.name] ?? 0;
+          return _indRow(s.name, 'W:${w.toStringAsFixed(2)} | ${ww}W/${ll}L');
+        }),
       ]),
     );
   }
@@ -687,6 +707,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             lowBB != null ? '${lowBB.toStringAsFixed(0)}/${midBB!.toStringAsFixed(0)}/${upBB!.toStringAsFixed(0)}' : '-'),
         _indRow('Stochastic', stoch?.toStringAsFixed(1) ?? '-'),
         const Divider(color: Color(0xFF1E2838)),
+        if ((_masterTopStrategies[sym] ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text('🎯 الاستراتيجيات: ${_masterTopStrategies[sym]}',
+                style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11)),
+          ),
         if (scalp != null) ...[
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             const Text('Scalp Score', style: TextStyle(color: Colors.white70, fontSize: 12)),
