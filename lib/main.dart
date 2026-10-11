@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'engine.dart' hide Candle;
 import 'services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
 
@@ -12,9 +13,12 @@ void main() {
 }
 
 const List<String> SYMBOLS = [
-  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'
+  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT',
+  'ADAUSDT', 'DOTUSDT', 'LINKUSDT', 'MATICUSDT', 'AVAXUSDT', 'ATOMUSDT',
+  'NEARUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT',
+  'SUIUSDT', 'LTCUSDT',
 ];
-const int LOOP_SECONDS = 10;
+const int LOOP_SECONDS = 5;
 
 class CryptoBotApp extends StatelessWidget {
   const CryptoBotApp({super.key});
@@ -47,14 +51,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   double _balance = 1000.0;
   double _initialCapital = 1000.0;
   double _marginPerTrade = 50.0;
-  int _leverage = 10;
+  int _leverage = 5;
   int _rsiBuy = 40;
   int _rsiSell = 60;
   int _smaShort = 5;
   int _smaLong = 10;
-  double _slPercent = 1.0;
-  double _tpPercent = 1.5;
-  int _scalpThreshold = 60;
+  double _slPercent = 2.5;
+  double _tpPercent = 1.2;
+  int _scalpThreshold = 45;
   bool _scalpEnabled = true;
   bool _running = false;
   bool _loaded = false;
@@ -87,7 +91,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _lowHistory[s] = [];
       _volumeHistory[s] = [];
     }
-    _loadState();
+    _loadState().then((_) {
+      if (mounted && !_running) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && !_running) _toggleBot();
+        });
+      }
+    });
+    WakelockPlus.enable();
     Timer(const Duration(seconds: 6), () {
       if (!_loaded && mounted) setState(() => _loaded = true);
     });
@@ -95,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _timer?.cancel();
     _tabs.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -235,6 +247,30 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (hist.length < 30) return;
     final pos = _positions[symbol];
     if (pos != null) {
+      // break-even: if profit reaches half of TP%, move SL to entry
+      final profitPct = (price - pos.entry) / pos.entry * 100;
+      if (profitPct >= _tpPercent * 0.5) {
+        final newSL = pos.entry;
+        if (newSL > pos.stopLoss) {
+          _positions[symbol] = Position(
+            symbol: symbol, entry: pos.entry, size: pos.size, margin: pos.margin,
+            stopLoss: newSL, takeProfit: pos.takeProfit, leverage: pos.leverage,
+            isScalp: pos.isScalp,
+          );
+        }
+      }
+      // trailing stop: after +1%, trail by 0.5%
+      if (profitPct >= 1.0) {
+        final trailSL = price * (1 - 0.5 / 100);
+        final cur = _positions[symbol]!;
+        if (trailSL > cur.stopLoss) {
+          _positions[symbol] = Position(
+            symbol: symbol, entry: cur.entry, size: cur.size, margin: cur.margin,
+            stopLoss: trailSL, takeProfit: cur.takeProfit, leverage: cur.leverage,
+            isScalp: cur.isScalp,
+          );
+        }
+      }
       if (price <= pos.stopLoss) { _closePosition(symbol, price, 'STOP_LOSS'); return; }
       if (price >= pos.takeProfit) { _closePosition(symbol, price, 'TAKE_PROFIT'); return; }
       final liqPrice = pos.entry * (1 - 1 / pos.leverage);
@@ -270,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (_balance < _marginPerTrade) return;
 
     if (_longBias) {
-      if (signal.direction == 'LONG' && signal.score >= 55) {
+      if (signal.direction == 'LONG' && signal.score >= 45) {
         _openPosition(symbol, price, isScalp: signal.score >= 70);
         for (final ind in _indicators) {
           ind.tests++;
@@ -278,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
       }
     } else {
-      if (_scalpEnabled && signal.direction == 'LONG' && signal.score >= thr) {
+      if (_scalpEnabled && signal.direction == 'LONG' && signal.score >= 40) {
         _openPosition(symbol, price, isScalp: true);
         return;
       }
@@ -336,6 +372,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       '$symbol @ \$${price.toStringAsFixed(2)} SL: \$${sl.toStringAsFixed(2)} TP: \$${tp.toStringAsFixed(2)}',
     );
     if (_trades.length > 200) _trades.removeLast();
+    _saveState();
   }
 
   void _closePosition(String symbol, double price, String reason) {
@@ -350,6 +387,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _positions.remove(symbol);
     NotificationService.show('Close $symbol', '$reason PnL: \$${pnl.toStringAsFixed(2)}');
     if (_trades.length > 200) _trades.removeLast();
+    _saveState();
   }
 
   @override
