@@ -9,11 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.0
-  shared_preferences: ^2.2.2
-  flutter_local_notifications: ^17.2.2
-  wakelock_plus: ^1.2.5
-  cupertino_icons: ^1.0.6
+  http: 1.2.2
+  shared_preferences: 2.2.3
+  flutter_local_notifications: 17.2.2
+  wakelock_plus: 1.2.5
+  cupertino_icons: 1.0.6
 
 dependency_overrides:
   package_info_plus: 8.0.0
