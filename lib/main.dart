@@ -57,9 +57,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   int _rsiSell = 60;
   int _smaShort = 5;
   int _smaLong = 10;
-  double _slPercent = 2.5;
-  double _tpPercent = 1.2;
-  int _scalpThreshold = 45;
+  double _slPercent = 1.5;
+  double _tpPercent = 3.0;
+  int _scalpThreshold = 65;
   bool _scalpEnabled = true;
   bool _running = false;
   bool _loaded = false;
@@ -321,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     final learnedOK = _learner.shouldEnter(signal.score);
     if (_longBias) {
-      if (signal.direction == 'LONG' && signal.score >= 45 && learnedOK) {
+      if (signal.direction == 'LONG' && signal.score >= 60 && learnedOK && _positions.length < _maxPositions) {
         _openPosition(symbol, price, isScalp: signal.score >= 70);
         for (final ind in _indicators) {
           ind.tests++;
@@ -329,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
       }
     } else {
-      if (_scalpEnabled && signal.direction == 'LONG' && signal.score >= 40) {
+      if (_scalpEnabled && signal.direction == 'LONG' && signal.score >= 55 && _positions.length < _maxPositions && _canTradeSymbol(symbol)) {
         _openPosition(symbol, price, isScalp: true);
         return;
       }
@@ -377,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       symbol: symbol, entry: price, size: size, margin: _marginPerTrade,
       stopLoss: sl, takeProfit: tp, leverage: _leverage, isScalp: isScalp,
     );
+    _lastTradeTime[symbol] = DateTime.now();
     _balance -= _marginPerTrade;
     _trades.insert(0, TradeRecord(
       symbol: symbol, action: isScalp ? 'SCALP_BUY' : 'BUY',
