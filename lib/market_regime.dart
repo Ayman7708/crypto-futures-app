@@ -28,8 +28,8 @@ class MarketRegimeAnalyzer {
     if (btcCloses.length < 50) {
       return MarketAnalysis(
         regime: Regime.neutral,
-        btcTrendPct: 0, altTrendPct: 0, altseasonScore: 0,
-        btcDominanceProxy: 0, description: 'بيانات غير كافية',
+        btcTrendPct: 0.0, altTrendPct: 0.0, altseasonScore: 0.0,
+        btcDominanceProxy: 0.0, description: 'بيانات غير كافية',
       );
     }
 
@@ -53,7 +53,7 @@ class MarketRegimeAnalyzer {
       altTrendSum += (closes.last - start) / start * 100;
       altCount++;
     }
-    final altTrend = altCount > 0 ? altTrendSum / altCount : 0;
+    final altTrend = altCount > 0 ? altTrendSum / altCount : 0.0;
 
     // Altseason score: alts outperforming BTC = positive
     final altseason = ((altTrend - btcTrend).clamp(-100.0, 100.0)).toDouble();
