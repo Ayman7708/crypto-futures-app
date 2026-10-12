@@ -7,6 +7,7 @@ import 'strategies.dart';
 import 'market_regime.dart';
 import 'volatility.dart';
 import 'market_symbols.dart';
+import 'master_signal.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
@@ -90,6 +91,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final MasterEngine _master = MasterEngine();
   MarketAnalysis? _marketAnalysis;
   final Map<String, VolatilityScore> _volScores = {};
+  final MasterSignal _masterSignal = MasterSignal();
+  final Map<String, MasterSignalResult> _masterResults = {};
   List<String> _allSymbols = [];
   int _maxActiveSymbols = 30;
   bool _loadingSymbols = false;
@@ -221,6 +224,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
         _focusFastCoins = (s['focusFast'] as bool?) ?? true;
         _topCoinCount = (s['topCoinCount'] as num?)?.toInt() ?? 10;
+        if (s['masterSignal'] != null) {
+          _masterSignal.loadFromJson(Map<String, dynamic>.from(s['masterSignal']));
+        }
         _maxActiveSymbols = (s['maxActive'] as num?)?.toInt() ?? 30;
         if (s['allSymbols'] != null) {
           _allSymbols = (s['allSymbols'] as List).map((e) => e.toString()).toList();
@@ -278,6 +284,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         'master': _master.toJson(),
         'focusFast': _focusFastCoins,
         'topCoinCount': _topCoinCount,
+        'masterSignal': _masterSignal.toJson(),
         'allSymbols': _allSymbols,
         'maxActive': _maxActiveSymbols,
       },
@@ -352,6 +359,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _volScores[sym] = VolatilityRanker.analyze(
           symbol: sym, closes: h, highs: hh, lows: ll, volumes: vv,
         );
+        // Master signal analysis
+        if (h.length >= 55) {
+          _masterResults[sym] = _masterSignal.analyze(
+            closes: h, highs: hh, lows: ll, volumes: vv,
+            smaShort: _smaShort, smaLong: _smaLong,
+          );
+        }
       }
     });
     _saveState();
@@ -598,6 +612,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // Update each master strategy weight
     for (final s in _master.strategies) {
       _master.updateFromTrade(s.name, wasWin);
+    }
+    // Update master signal indicator weights
+    final mr = _masterResults[symbol];
+    if (mr != null) {
+      _masterSignal.updateFromTrade(mr.votes, wasWin);
     }
     _balance += pos.margin + pnl;
     _trades.insert(0, TradeRecord(
@@ -865,6 +884,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           final ww = _master.wins[s.name] ?? 0;
           final ll = _master.losses[s.name] ?? 0;
           return _indRow(s.name, 'W:${w.toStringAsFixed(2)} | ${ww}W/${ll}L');
+        }),
+        Builder(builder: (context) {
+          final btcMaster = _masterResults['BTCUSDT'];
+          if (btcMaster == null) return const SizedBox.shrink();
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Divider(color: Color(0xFF1E2838)),
+            const Text('👑 المؤشر الأسطوري (BTC)',
+                style: TextStyle(color: Color(0xFFFFD700), fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+              Column(children: [
+                const Text('صعودي', style: TextStyle(color: Color(0xFF4ADE80), fontSize: 11)),
+                Text('${btcMaster.bullishScore}',
+                    style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 20, fontWeight: FontWeight.bold)),
+              ]),
+              Column(children: [
+                const Text('هبوطي', style: TextStyle(color: Color(0xFFEF4444), fontSize: 11)),
+                Text('${btcMaster.bearishScore}',
+                    style: const TextStyle(color: Color(0xFFEF4444), fontSize: 20, fontWeight: FontWeight.bold)),
+              ]),
+            ]),
+            const SizedBox(height: 4),
+            Center(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: btcMaster.recommendation.contains('LONG')
+                    ? const Color(0xFF16A34A).withOpacity(0.3)
+                    : (btcMaster.recommendation.contains('SHORT')
+                        ? const Color(0xFFDC2626).withOpacity(0.3)
+                        : const Color(0xFF1A2332)),
+                borderRadius: BorderRadius.circular(6)),
+              child: Text(btcMaster.recommendation,
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            )),
+            const SizedBox(height: 6),
+            if (btcMaster.topBullish.isNotEmpty)
+              Text('👆 ${btcMaster.topBullish.join(" • ")}',
+                  style: const TextStyle(color: Color(0xFF4ADE80), fontSize: 10)),
+            if (btcMaster.topBearish.isNotEmpty)
+              Text('👇 ${btcMaster.topBearish.join(" • ")}',
+                  style: const TextStyle(color: Color(0xFFEF4444), fontSize: 10)),
+          ]);
         }),
         if (_volScores.isNotEmpty) ...[
           const Divider(color: Color(0xFF1E2838)),
