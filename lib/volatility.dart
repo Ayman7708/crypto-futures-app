@@ -67,12 +67,12 @@ class VolatilityRanker {
     // Composite opportunity score
     // Weight: ATR% (fast movement), volume (activity), |momentum| (trend), range
     double score = 0;
-    score += (atrPct * 8).clamp(0, 40);         // ATR is key
-    score += ((vs - 1) * 15).clamp(0, 25);      // Volume surge
-    score += (momentum.abs() * 2).clamp(0, 20); // Any direction momentum
-    score += (rangePct * 1.2).clamp(0, 15);     // Range
+    score += (atrPct * 8).clamp(0, 40).toDouble();         // ATR is key
+    score += ((vs - 1) * 15).clamp(0, 25).toDouble();      // Volume surge
+    score += (momentum.abs() * 2).clamp(0, 20).toDouble(); // Any direction momentum
+    score += (rangePct * 1.2).clamp(0, 15).toDouble();     // Range
 
-    final opp = score.clamp(0, 100);
+    final opp = score.clamp(0, 100).toDouble();
 
     // Rank
     String rank;
