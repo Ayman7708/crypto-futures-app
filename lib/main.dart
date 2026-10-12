@@ -66,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   int _smaLong = 10;
   double _slPercent = 2.0;
   double _tpPercent = 5.0;
-  int _scalpThreshold = 65;
+  int _scalpThreshold = 30;
   bool _scalpEnabled = true;
   bool _running = false;
   bool _loaded = false;
@@ -115,9 +115,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
   bool _focusFastCoins = true;
   int _topCoinCount = 10;
-  final int _maxPositions = 5;
+  final int _maxPositions = 15;
   final Map<String, DateTime> _lastTradeTime = {};
-  static const int _cooldownSeconds = 600;
+  double _dailyPnL = 0.0;
+  DateTime _dailyResetDate = DateTime.now();
+  double _recoveryMultiplier = 1.0;
+  static const int _cooldownSeconds = 30;
 
   @override
   void initState() {
@@ -498,11 +501,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       thresholdAdj = adj;
     }
 
-    final baseThreshold = (_scalpThreshold + thresholdAdj).clamp(40, 85);
+    final baseThreshold = (_scalpThreshold + thresholdAdj).clamp(25, 70);
     final effectiveThreshold = _longBias
-        ? (baseThreshold / longMult).clamp(40, 85).toInt()
-        : (baseThreshold / shortMult).clamp(40, 85).toInt();
-    final effectiveThresholdShort = (baseThreshold / shortMult).clamp(40, 85).toInt();
+        ? (baseThreshold / longMult).clamp(25, 70).toInt()
+        : (baseThreshold / shortMult).clamp(25, 70).toInt();
+    final effectiveThresholdShort = (baseThreshold / shortMult).clamp(25, 70).toInt();
 
     final canTakeMore = _positions.length < _maxPositions && _canTradeSymbol(symbol);
 
@@ -525,9 +528,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     // Try SHORT (if regime favors bearish or neutral)
     final shortScore = signal.score; // Reuse same score logic in reverse
-    final shortOK = shortScore >= effectiveThresholdShort &&
+    final shortOK = shortScore >= 40 &&
                     shortMult > 0.5 &&
-                    canTakeMore && isTopCoin &&
+                    canTakeMore &&
                     (regime == Regime.bearStrong ||
                      regime == Regime.bearWeak ||
                      (regime == Regime.neutral && shortMult >= 1.0));
@@ -579,26 +582,55 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   final Map<String, DateTime> _lastProfitTime = {};
 
+  void _updateRecoveryMultiplier() {
+    // Reset at new day
+    final now = DateTime.now();
+    if (now.day != _dailyResetDate.day) {
+      _dailyResetDate = now;
+      _dailyPnL = 0.0;
+    }
+    // Calculate multiplier based on daily drawdown
+    if (_dailyPnL >= 0) {
+      _recoveryMultiplier = 1.0;
+    } else {
+      final lossPct = _dailyPnL.abs() / _initialCapital;
+      if (lossPct < 0.03) {
+        _recoveryMultiplier = 1.3;
+      } else if (lossPct < 0.07) {
+        _recoveryMultiplier = 1.8;
+      } else if (lossPct < 0.12) {
+        _recoveryMultiplier = 2.5;
+      } else {
+        _recoveryMultiplier = 3.5;
+      }
+    }
+  }
+
   void _openPosition(String symbol, double price, {required bool isScalp, bool isLong = true}) {
     // Profit lockout: don't reopen same coin for 15 min after a profitable close
     final lastProfit = _lastProfitTime[symbol];
     if (lastProfit != null) {
       final mins = DateTime.now().difference(lastProfit).inMinutes;
-      if (mins < 15) return;
+      if (mins < 1) return;
     }
     final size = (_marginPerTrade * _leverage) / price;
     final sl = isLong
         ? price * (1 - _slPercent / 100)
         : price * (1 + _slPercent / 100);
     final tp = isLong
-        ? price * (1 + _tpPercent / 100)
-        : price * (1 - _tpPercent / 100);
+        ? price * (1 + _tpPercent * _recoveryMultiplier / 100)
+        : price * (1 - _tpPercent * _recoveryMultiplier / 100);
     _positions[symbol] = Position(
       symbol: symbol, entry: price, size: size, margin: _marginPerTrade,
       stopLoss: sl, takeProfit: tp, leverage: _leverage, isScalp: isScalp,
       isLong: isLong,
     );
     _lastTradeTime[symbol] = DateTime.now();
+    // Update indicator test counts
+    for (final ind in _indicators) {
+      ind.tests++;
+      ind.wins++;  // Will be adjusted if trade loses
+    }
     _balance -= _marginPerTrade;
     _trades.insert(0, TradeRecord(
       symbol: symbol, action: isScalp ? 'SCALP_BUY' : 'BUY',
@@ -617,6 +649,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (pos == null) return;
     final pnl = (price - pos.entry) * pos.size;
     if (pnl > 0) _lastProfitTime[symbol] = DateTime.now();
+    _dailyPnL += pnl;
+    _updateRecoveryMultiplier();
     final wasWin = pnl > 0;
     final reason_str = _scalpSignals[symbol]?.reason ?? '';
     _learner.updateFromTrade(
@@ -713,6 +747,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Text('${pnl >= 0 ? '+' : ''}\$${pnl.toStringAsFixed(2)}',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
           Text('${pnl >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%', style: TextStyle(fontSize: 11, color: color)),
+          if (_recoveryMultiplier > 1.0)
+            Container(
+              margin: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text('تعويض ×${_recoveryMultiplier.toStringAsFixed(1)}',
+                  style: const TextStyle(fontSize: 9, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+            ),
         ]),
       ]),
     );
