@@ -37,12 +37,12 @@ class IndicatorsV2 {
     for (int i = 1; i < closes.length; i++) {
       mom.add(closes[i] - closes[i - 1]);
     }
-    final e1 = _emaSeries(mom, long);
-    final e2 = _emaSeries(e1, short);
+    final e1 = emaSeriesCalc(mom, long);
+    final e2 = emaSeriesCalc(e1, short);
     if (e2.isEmpty) return null;
     final absMom = mom.map((e) => e.abs()).toList();
-    final a1 = _emaSeries(absMom, long);
-    final a2 = _emaSeries(a1, short);
+    final a1 = emaSeriesCalc(absMom, long);
+    final a2 = emaSeriesCalc(a1, short);
     if (a2.isEmpty || a2.last == 0) return null;
     return 100 * e2.last / a2.last;
   }
@@ -90,14 +90,14 @@ class IndicatorsV2 {
   static double? massIndex(
     List<double> highs, List<double> lows, [int period = 25]) {
     if (highs.length < period * 2) return null;
-    final ema_h = _emaSeries(highs, 9);
-    final ema_l = _emaSeries(lows, 9);
+    final ema_h = emaSeriesCalc(highs, 9);
+    final ema_l = emaSeriesCalc(lows, 9);
     if (ema_h.length != ema_l.length) return null;
     final diff = List<double>.generate(ema_h.length, (i) => (ema_h[i] - ema_l[i]).abs());
     if (diff.length < period * 2) return null;
-    final ema1 = _emaSeries(diff, 9);
+    final ema1 = emaSeriesCalc(diff, 9);
     if (ema1.length < period) return null;
-    final ema2 = _emaSeries(ema1, 9);
+    final ema2 = emaSeriesCalc(ema1, 9);
     if (ema2.length < period) return null;
     double sum = 0;
     for (int i = ema2.length - period; i < ema2.length; i++) {
@@ -193,7 +193,7 @@ class IndicatorsV2 {
   }
 
   // ============= Helpers =============
-  static List<double> _emaSeries(List<double> arr, int period) {
+  static List<double> emaSeriesCalc(List<double> arr, int period) {
     if (arr.length < period) return [];
     final k = 2 / (period + 1);
     final out = <double>[];
@@ -206,7 +206,7 @@ class IndicatorsV2 {
     return out;
   }
 
-  static double? _ema(List<double> arr, int period) {
+  static double? emaCalc(List<double> arr, int period) {
     if (arr.length < period) return null;
     final k = 2 / (period + 1);
     double e = arr.take(period).reduce((a, b) => a + b) / period;

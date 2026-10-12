@@ -28,9 +28,9 @@ class IndicatorsV3 {
   // Alligator (Bill Williams)
   static (double?, double?, double?) alligator(List<double> closes) {
     if (closes.length < 21) return (null, null, null);
-    final jaw = _sma(closes, 13);
-    final teeth = _sma(closes, 8);
-    final lips = _sma(closes, 5);
+    final jaw = smaCalc(closes, 13);
+    final teeth = smaCalc(closes, 8);
+    final lips = smaCalc(closes, 5);
     return (jaw, teeth, lips);
   }
 
@@ -72,14 +72,14 @@ class IndicatorsV3 {
 
   // Bulls Power
   static double? bullsPower(List<double> highs, List<double> closes, [int period = 13]) {
-    final e = _ema(closes, period);
+    final e = emaCalc(closes, period);
     if (e == null) return null;
     return highs.last - e;
   }
 
   // Bears Power
   static double? bearsPower(List<double> lows, List<double> closes, [int period = 13]) {
-    final e = _ema(closes, period);
+    final e = emaCalc(closes, period);
     if (e == null) return null;
     return lows.last - e;
   }
@@ -96,8 +96,8 @@ class IndicatorsV3 {
       adl.add(sum);
     }
     if (adl.length < slow) return null;
-    final e1 = _ema(adl, fast);
-    final e2 = _ema(adl, slow);
+    final e1 = emaCalc(adl, fast);
+    final e2 = emaCalc(adl, slow);
     if (e1 == null || e2 == null) return null;
     return e1 - e2;
   }
@@ -143,8 +143,8 @@ class IndicatorsV3 {
       }
       vf.add(volumes[i] * trend * (hlc - prevHlc).abs());
     }
-    final e1 = _ema(vf, fast);
-    final e2 = _ema(vf, slow);
+    final e1 = emaCalc(vf, fast);
+    final e2 = emaCalc(vf, slow);
     if (e1 == null || e2 == null) return null;
     return e1 - e2;
   }
@@ -167,7 +167,7 @@ class IndicatorsV3 {
 
   // Elder Impulse System
   static String elderImpulse(List<double> closes, List<double> highs, List<double> lows, [int emaP = 13]) {
-    final ema = _ema(closes, emaP);
+    final ema = emaCalc(closes, emaP);
     if (ema == null || closes.length < 15) return 'NEUTRAL';
     final (_, _, hist) = _macd(closes);
     if (hist == null) return 'NEUTRAL';
@@ -212,25 +212,25 @@ class IndicatorsV3 {
     if (closes.length < period) return (null, null);
     final ap = <double>[];
     for (int i = 0; i < closes.length; i++) ap.add((highs[i] + lows[i] + closes[i]) / 3);
-    final esa = _ema(ap, period);
+    final esa = emaCalc(ap, period);
     if (esa == null) return (null, null);
     final d = <double>[];
     for (final x in ap) d.add((x - esa).abs());
-    final de = _ema(d, period);
+    final de = emaCalc(d, period);
     if (de == null || de == 0) return (0.0, 0.0);
     final ci = (ap.last - esa) / (0.015 * de);
     return (ci, ci); // wt1, wt2 approximated
   }
 
   // Helpers
-  static double? _sma(List<double> arr, int p) {
+  static double? smaCalc(List<double> arr, int p) {
     if (arr.length < p) return null;
     double s = 0;
     for (int i = arr.length - p; i < arr.length; i++) s += arr[i];
     return s / p;
   }
 
-  static double? _ema(List<double> arr, int p) {
+  static double? emaCalc(List<double> arr, int p) {
     if (arr.length < p) return null;
     final k = 2 / (p + 1);
     double e = arr.take(p).reduce((a, b) => a + b) / p;
@@ -239,8 +239,8 @@ class IndicatorsV3 {
   }
 
   static (double?, double?, double?) _macd(List<double> closes) {
-    final e12 = _ema(closes, 12);
-    final e26 = _ema(closes, 26);
+    final e12 = emaCalc(closes, 12);
+    final e26 = emaCalc(closes, 26);
     if (e12 == null || e26 == null) return (null, null, null);
     final macd = e12 - e26;
     return (macd, macd, macd > 0 ? 1.0 : -1.0);

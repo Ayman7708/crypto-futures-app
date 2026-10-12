@@ -83,8 +83,8 @@ class MasterSignal {
     if (sma5 != null && sma20 != null) {
       votes.add(SignalVote('SMA Cross', 'Trend', sma5 > sma20 ? 60 : -60, weights['SMA Cross']!));
     }
-    final ema12 = IndicatorsV2._ema(closes, 12);
-    final ema26 = IndicatorsV2._ema(closes, 26);
+    final ema12 = IndicatorsV2.emaCalc(closes, 12);
+    final ema26 = IndicatorsV2.emaCalc(closes, 26);
     if (ema12 != null && ema26 != null) {
       votes.add(SignalVote('EMA Cross', 'Trend', ema12 > ema26 ? 60 : -60, weights['EMA Cross']!));
     }
