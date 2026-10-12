@@ -1,7 +1,7 @@
 name: crypto_trade_bot
 description: Crypto Futures Trading Bot
 publish_to: 'none'
-version: 8.0.1+36
+version: 8.1.0+37
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,7 +13,6 @@ dependencies:
   shared_preferences: 2.2.3
   flutter_local_notifications: 17.2.2
   wakelock_plus: 1.2.5
-  flutter_background_service: 5.0.10
   cupertino_icons: 1.0.6
 
 dependency_overrides:

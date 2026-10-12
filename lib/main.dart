@@ -10,8 +10,6 @@ import 'market_symbols.dart';
 import 'master_signal.dart';
 import 'search_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
 
@@ -303,59 +301,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (_running) {
       _timer?.cancel();
       setState(() => _running = false);
-      _stopBackgroundService();
       NotificationService.show('⏹ إيقاف البوت', 'تم إيقاف التداول الآلي');
     } else {
       setState(() => _running = true);
-      _startBackgroundService();
       _tick();
       _timer = Timer.periodic(const Duration(seconds: LOOP_SECONDS), (_) => _tick());
-      NotificationService.show('▶ بدء البوت', 'البوت يعمل في الخلفية الآن');
+      NotificationService.show('▶ بدء البوت', 'البوت يعمل — لا تغلق التطبيق');
     }
   }
 
-  Future<void> _startBackgroundService() async {
-    final service = FlutterBackgroundService();
-    await service.configure(
-      androidConfiguration: AndroidConfiguration(
-        onStart: _onBackgroundStart,
-        autoStart: true,
-        isForegroundMode: true,
-        notificationChannelId: 'crypto_bot_bg',
-        initialNotificationTitle: 'بوت التداول يعمل',
-        initialNotificationContent: 'المراقبة جارية...',
-        foregroundServiceNotificationId: 888,
-        foregroundServiceTypes: [AndroidForegroundType.dataSync],
-      ),
-      iosConfiguration: IosConfiguration(autoStart: true, onForeground: _onBackgroundStart),
-    );
-    await service.startService();
-  }
-
-  Future<void> _stopBackgroundService() async {
-    final service = FlutterBackgroundService();
-    service.invoke('stopService');
-  }
-
-  @pragma('vm:entry-point')
-  static void _onBackgroundStart(ServiceInstance service) async {
-    // Background service is alive; actual trading happens in main isolate with wakelock
-    if (service is AndroidServiceInstance) {
-      service.on('stopService').listen((event) {
-        service.stopSelf();
-      });
-      service.setAsForegroundService();
-    }
-    // Keep-alive loop
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
-      if (service is AndroidServiceInstance) {
-        await service.setForegroundNotificationInfo(
-          title: 'بوت التداول يعمل',
-          content: 'المراقبة جارية ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-        );
-      }
-    });
-  }
 
   Future<void> _tick() async {
     final candles = await CandleService.fetchAll(_activeSymbols);
