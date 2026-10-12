@@ -8,6 +8,7 @@ import 'market_regime.dart';
 import 'volatility.dart';
 import 'market_symbols.dart';
 import 'master_signal.dart';
+import 'search_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
@@ -122,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tabs = TabController(length: 7, vsync: this);
+    _tabs = TabController(length: 8, vsync: this);
     for (final s in _activeSymbols) {
       _priceHistory[s] = [];
       _highHistory[s] = [];
@@ -676,8 +677,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           tabs: const [
             Tab(text: 'الرئيسية'), Tab(text: 'التحليل'),
             Tab(text: 'السجل'), Tab(text: 'الاختبار'), Tab(text: 'اختبار المؤشرات'),
-            Tab(text: 'المعتمدة'), Tab(text: 'الإعدادات'),
-          ],
+            Tab(text: 'المعتمدة'), Tab(text: 'الإعدادات'),],
         ),
       ),
       body: Column(children: [
@@ -685,7 +685,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Expanded(child: TabBarView(controller: _tabs, children: [
           _buildDashboard(), _buildAnalytics(), _buildTrades(),
           _buildBacktest(), _buildTestingIndicators(), _buildApprovedIndicators(),
-          _buildSettings(),
+          const SearchScreen(), _buildSettings(),
         ])),
         _buildStartButton(),
       ]),
