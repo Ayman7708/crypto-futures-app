@@ -1,27 +1,26 @@
-import 'dart:math';
+import 'indicators.dart';
 
-class Candle {
-  final DateTime time;
-  final double open, high, low, close;
-  Candle({required this.time, required this.open, required this.high, required this.low, required this.close});
-}
-
+/// Position - opened trade
 class Position {
   final String symbol;
   final double entry;
-  final double size;
-  final double margin;
+  final double size;        // contract quantity
+  final double margin;      // USDT margin used
   final double stopLoss;
   final double takeProfit;
   final int leverage;
-  final bool isScalp;
   final bool isLong;
   final DateTime openedAt;
 
   Position({
-    required this.symbol, required this.entry, required this.size,
-    required this.margin, required this.stopLoss, required this.takeProfit,
-    required this.leverage, this.isScalp = false, this.isLong = true,
+    required this.symbol,
+    required this.entry,
+    required this.size,
+    required this.margin,
+    required this.stopLoss,
+    required this.takeProfit,
+    required this.leverage,
+    this.isLong = true,
     DateTime? openedAt,
   }) : openedAt = openedAt ?? DateTime.now();
 
@@ -32,255 +31,243 @@ class Position {
   double get liquidationPrice => isLong
       ? entry * (1 - 1 / leverage)
       : entry * (1 + 1 / leverage);
+
+  Map<String, dynamic> toJson() => {
+        'symbol': symbol,
+        'entry': entry,
+        'size': size,
+        'margin': margin,
+        'stopLoss': stopLoss,
+        'takeProfit': takeProfit,
+        'leverage': leverage,
+        'isLong': isLong,
+        'openedAt': openedAt.toIso8601String(),
+      };
+
+  factory Position.fromJson(Map<String, dynamic> j) => Position(
+        symbol: j['symbol'],
+        entry: (j['entry'] as num).toDouble(),
+        size: (j['size'] as num).toDouble(),
+        margin: (j['margin'] as num).toDouble(),
+        stopLoss: (j['stopLoss'] as num).toDouble(),
+        takeProfit: (j['takeProfit'] as num).toDouble(),
+        leverage: (j['leverage'] as num).toInt(),
+        isLong: j['isLong'] ?? true,
+        openedAt: DateTime.tryParse(j['openedAt'] ?? '') ?? DateTime.now(),
+      );
 }
 
+/// TradeRecord - closed trade log
 class TradeRecord {
   final String symbol;
-  final String action;
+  final String action;   // BUY, SELL, STOP_LOSS, TAKE_PROFIT, MANUAL
   final double price;
   final double pnl;
   final DateTime time;
-  final bool isScalp;
+  final bool isLong;
+
   TradeRecord({
-    required this.symbol, required this.action, required this.price,
-    required this.pnl, required this.time, this.isScalp = false,
+    required this.symbol,
+    required this.action,
+    required this.price,
+    required this.pnl,
+    required this.time,
+    this.isLong = true,
   });
 
   Map<String, dynamic> toJson() => {
-    'symbol': symbol, 'action': action, 'price': price,
-    'pnl': pnl, 'time': time.toIso8601String(), 'isScalp': isScalp,
-  };
+        'symbol': symbol,
+        'action': action,
+        'price': price,
+        'pnl': pnl,
+        'time': time.toIso8601String(),
+        'isLong': isLong,
+      };
 
   factory TradeRecord.fromJson(Map<String, dynamic> j) => TradeRecord(
-    symbol: j['symbol'], action: j['action'], price: (j['price'] as num).toDouble(),
-    pnl: (j['pnl'] as num).toDouble(), time: DateTime.parse(j['time']),
-    isScalp: j['isScalp'] ?? false,
-  );
+        symbol: j['symbol'],
+        action: j['action'],
+        price: (j['price'] as num).toDouble(),
+        pnl: (j['pnl'] as num).toDouble(),
+        time: DateTime.tryParse(j['time'] ?? '') ?? DateTime.now(),
+        isLong: j['isLong'] ?? true,
+      );
 }
 
-// =============== INDICATORS ===============
-class Indicators {
-  static double? sma(List<double> arr, int period) {
-    if (arr.length < period) return null;
-    double sum = 0;
-    for (int i = arr.length - period; i < arr.length; i++) sum += arr[i];
-    return sum / period;
-  }
+/// Signal - entry decision
+class Signal {
+  final String symbol;
+  final String direction;   // LONG, SHORT, NONE
+  final int score;          // 0-100 confidence
+  final double entry;       // suggested entry price
+  final double stopLoss;    // suggested SL
+  final double takeProfit;  // suggested TP
+  final String reason;      // why
 
-  static double? ema(List<double> arr, int period) {
-    if (arr.length < period) return null;
-    final k = 2 / (period + 1);
-    double ema = arr.take(period).reduce((a, b) => a + b) / period;
-    for (int i = period; i < arr.length; i++) {
-      ema = arr[i] * k + ema * (1 - k);
-    }
-    return ema;
-  }
+  Signal({
+    required this.symbol,
+    required this.direction,
+    required this.score,
+    required this.entry,
+    required this.stopLoss,
+    required this.takeProfit,
+    required this.reason,
+  });
 
-  static double? rsi(List<double> arr, [int period = 14]) {
-    if (arr.length < period + 1) return null;
-    double gains = 0, losses = 0;
-    for (int i = arr.length - period; i < arr.length; i++) {
-      final d = arr[i] - arr[i - 1];
-      if (d > 0) gains += d; else losses -= d;
-    }
-    final ag = gains / period;
-    final al = losses / period;
-    if (al == 0) return 100;
-    return 100 - (100 / (1 + ag / al));
-  }
-
-  static (double?, double?, double?) macd(List<double> arr) {
-    final ema12 = ema(arr, 12);
-    final ema26 = ema(arr, 26);
-    if (ema12 == null || ema26 == null) return (null, null, null);
-    final macd = ema12 - ema26;
-    // approximate signal (9-period EMA of MACD) using last 9 macd values
-    if (arr.length < 35) return (macd, null, null);
-    final macdHistory = <double>[];
-    for (int i = 26; i <= arr.length; i++) {
-      final sub = arr.sublist(0, i);
-      final e12 = ema(sub, 12);
-      final e26 = ema(sub, 26);
-      if (e12 != null && e26 != null) macdHistory.add(e12 - e26);
-    }
-    if (macdHistory.length < 9) return (macd, null, null);
-    final signal = ema(macdHistory, 9);
-    final hist = signal != null ? macd - signal : null;
-    return (macd, signal, hist);
-  }
-
-  static (double?, double?, double?) bollinger(List<double> arr, [int period = 20, double mult = 2]) {
-    if (arr.length < period) return (null, null, null);
-    final slice = arr.sublist(arr.length - period);
-    final mean = slice.reduce((a, b) => a + b) / period;
-    double variance = 0;
-    for (final v in slice) variance += pow(v - mean, 2);
-    variance /= period;
-    final sd = sqrt(variance);
-    return (mean - mult * sd, mean, mean + mult * sd);
-  }
-
-  static double? stochastic(List<double> highs, List<double> lows, List<double> closes, [int period = 14]) {
-    if (closes.length < period) return null;
-    final start = closes.length - period;
-    double highest = highs[start], lowest = lows[start];
-    for (int i = start; i < closes.length; i++) {
-      if (highs[i] > highest) highest = highs[i];
-      if (lows[i] < lowest) lowest = lows[i];
-    }
-    if (highest == lowest) return 50;
-    return ((closes.last - lowest) / (highest - lowest)) * 100;
-  }
+  bool get isValid => direction != 'NONE' && score >= 50;
 }
 
-// =============== SCALPING SCORER ===============
-class ScalpSignal {
-  final int score;      // 0-100
-  final String direction; // 'LONG' or 'NONE'
-  final String reason;
-  ScalpSignal(this.score, this.direction, this.reason);
-}
-
-class ScalpAnalyzer {
-  /// Analyze market and return a score 0-100 for a LONG scalp entry
-  static ScalpSignal analyze({
-    required List<double> closes,
-    required List<double> highs,
-    required List<double> lows,
-    required int smaShort,
-    required int smaLong,
-    required int rsiBuy,
+/// StrategyAnalyzer - V9 logic
+/// 4h trend + 1h entry + RSI confirmation + Volume
+class StrategyAnalyzer {
+  /// Analyze 4h candles for overall trend
+  static String trend4h({
+    required List<double> closes4h,
   }) {
-    if (closes.length < max(smaLong, 30)) {
-      return ScalpSignal(0, 'NONE', 'بيانات غير كافية');
+    final ema200 = Ind.ema(closes4h, 200);
+    if (ema200 == null || closes4h.isEmpty) return 'NONE';
+    final price = closes4h.last;
+    if (price > ema200 * 1.005) return 'BULL';
+    if (price < ema200 * 0.995) return 'BEAR';
+    return 'NEUTRAL';
+  }
+
+  /// Analyze 1h candles for entry timing
+  static Signal analyze({
+    required String symbol,
+    required List<double> closes1h,
+    required List<double> highs1h,
+    required List<double> lows1h,
+    required List<double> volumes1h,
+    required String trend,
+    required int leverage,
+    required double balance,
+    required double riskPct,
+  }) {
+    if (closes1h.length < 50) {
+      return Signal(
+        symbol: symbol, direction: 'NONE', score: 0,
+        entry: 0, stopLoss: 0, takeProfit: 0,
+        reason: 'بيانات غير كافية',
+      );
+    }
+
+    final price = closes1h.last;
+    final ema50 = Ind.ema(closes1h, 50);
+    final rsi = Ind.rsi(closes1h, 14);
+    final atr = Ind.atr(highs1h, lows1h, closes1h, 14);
+    final vs = Ind.volumeSurge(volumes1h, 20);
+
+    if (ema50 == null || rsi == null || atr == 0) {
+      return Signal(
+        symbol: symbol, direction: 'NONE', score: 0,
+        entry: 0, stopLoss: 0, takeProfit: 0,
+        reason: 'مؤشرات غير جاهزة',
+      );
     }
 
     int score = 0;
     final reasons = <String>[];
 
-    // 1. SMA trend (25 points)
-    final ss = Indicators.sma(closes, smaShort);
-    final sl = Indicators.sma(closes, smaLong);
-    if (ss != null && sl != null && ss > sl) {
-      score += 25;
-      reasons.add('اتجاه صاعد (SMA)');
-    }
+    // ========== LONG setup ==========
+    if (trend == 'BULL') {
+      // Condition 1: price above EMA50 (uptrend in 1h)
+      if (price > ema50) {
+        score += 25;
+        reasons.add('فوق EMA50');
+      }
 
-    // 2. RSI (20 points)
-    final rsi = Indicators.rsi(closes, 14);
-    if (rsi != null) {
-      if (rsi < rsiBuy) { score += 20; reasons.add('RSI=${rsi.toStringAsFixed(1)} (تشبع بيعي)'); }
-      else if (rsi < 50) { score += 10; reasons.add('RSI=${rsi.toStringAsFixed(1)}'); }
-    }
+      // Condition 2: RSI in recovery zone (30-55)
+      if (rsi >= 30 && rsi <= 55) {
+        score += 25;
+        reasons.add('RSI=${rsi.toStringAsFixed(0)}');
+      } else if (rsi > 55 && rsi < 70) {
+        score += 10;
+        reasons.add('RSI=${rsi.toStringAsFixed(0)}');
+      }
 
-    // 3. MACD (20 points)
-    final (macd, signal, hist) = Indicators.macd(closes);
-    if (macd != null && signal != null && hist != null) {
-      if (hist > 0) { score += 20; reasons.add('MACD إيجابي'); }
-      else if (macd > signal) { score += 10; reasons.add('MACD تقاطع صاعد'); }
-    }
+      // Condition 3: Price near EMA50 (pullback)
+      final distPct = (price - ema50) / ema50 * 100;
+      if (distPct >= -1.5 && distPct <= 2.5) {
+        score += 20;
+        reasons.add('قرب EMA50');
+      }
 
-    // 4. Bollinger Bands (20 points)
-    final (lowBB, midBB, upBB) = Indicators.bollinger(closes, 20, 2);
-    if (lowBB != null) {
-      final last = closes.last;
-      if (last <= lowBB) { score += 20; reasons.add('تحت حد بولنجر السفلي'); }
-      else if (last < midBB!) { score += 10; reasons.add('تحت وسط بولنجر'); }
-    }
+      // Condition 4: Volume surge
+      if (vs > 1.3) {
+        score += 20;
+        reasons.add('حجم ×${vs.toStringAsFixed(1)}');
+      }
 
-    // 5. Stochastic (15 points)
-    final stoch = Indicators.stochastic(highs, lows, closes, 14);
-    if (stoch != null && stoch < 20) {
-      score += 15;
-      reasons.add('Stochastic=${stoch.toStringAsFixed(1)}');
-    }
-
-    final direction = score >= 60 ? 'LONG' : 'NONE';
-    return ScalpSignal(score, direction, reasons.join(' • '));
-  }
-}
-
-// =============== BACKTEST ===============
-class BacktestResult {
-  final int trades;
-  final int wins;
-  final int losses;
-  final double finalBalance;
-  final double maxDrawdown;
-  BacktestResult({
-    required this.trades, required this.wins, required this.losses,
-    required this.finalBalance, required this.maxDrawdown,
-  });
-  double get winRate => trades == 0 ? 0 : (wins / trades * 100);
-  double get profitPct => (finalBalance - 1000) / 1000 * 100;
-}
-
-class Backtester {
-  static BacktestResult run({
-    required List<double> prices,
-    required int smaShort,
-    required int smaLong,
-    required int rsiBuy,
-    required int rsiSell,
-    double initial = 1000,
-    int leverage = 10,
-    double marginPerTrade = 50,
-  }) {
-    double balance = initial;
-    int wins = 0, losses = 0, trades = 0;
-    double peak = initial, maxDD = 0;
-    Position? pos;
-
-    final hist = <double>[];
-    for (int i = 0; i < prices.length; i++) {
-      hist.add(prices[i]);
-      if (hist.length < max(smaLong, 15) + 1) continue;
-      final price = prices[i];
-      final ss = Indicators.sma(hist, smaShort);
-      final sl = Indicators.sma(hist, smaLong);
-      final rsi = Indicators.rsi(hist, 14);
-      if (ss == null || sl == null || rsi == null) continue;
-
-      // Check SL/TP
-      if (pos != null) {
-        if (price <= pos.stopLoss || price >= pos.takeProfit) {
-          final pnl = (price - pos.entry) * pos.size;
-          balance += pos.margin + pnl;
-          if (pnl > 0) wins++; else losses++;
-          trades++;
-          pos = null;
+      // Condition 5: RSI momentum up
+      if (closes1h.length >= 3) {
+        final rsiPrev = Ind.rsi(closes1h.sublist(0, closes1h.length - 1), 14);
+        if (rsiPrev != null && rsi > rsiPrev) {
+          score += 10;
+          reasons.add('RSI↑');
         }
       }
 
-      // Entry
-      if (pos == null && ss > sl && rsi < rsiBuy && balance >= marginPerTrade) {
-        final size = (marginPerTrade * leverage) / price;
-        final sl2 = price * 0.99;
-        final tp2 = price * 1.015;
-        pos = Position(
-          symbol: 'BT', entry: price, size: size, margin: marginPerTrade,
-          stopLoss: sl2, takeProfit: tp2, leverage: leverage,
+      if (score >= 60) {
+        final sl = price - atr * 1.5;
+        final tp = price + atr * 3.0;
+        return Signal(
+          symbol: symbol, direction: 'LONG', score: score,
+          entry: price, stopLoss: sl, takeProfit: tp,
+          reason: reasons.join(' | '),
         );
-        balance -= marginPerTrade;
       }
-      // Exit
-      else if (pos != null && ss < sl && rsi > rsiSell) {
-        final pnl = (price - pos.entry) * pos.size;
-        balance += pos.margin + pnl;
-        if (pnl > 0) wins++; else losses++;
-        trades++;
-        pos = null;
-      }
-
-      if (balance > peak) peak = balance;
-      final dd = (peak - balance) / peak * 100;
-      if (dd > maxDD) maxDD = dd;
     }
 
-    return BacktestResult(
-      trades: trades, wins: wins, losses: losses,
-      finalBalance: balance, maxDrawdown: maxDD,
+    // ========== SHORT setup ==========
+    if (trend == 'BEAR') {
+      if (price < ema50) {
+        score += 25;
+        reasons.add('تحت EMA50');
+      }
+
+      if (rsi >= 45 && rsi <= 70) {
+        score += 25;
+        reasons.add('RSI=${rsi.toStringAsFixed(0)}');
+      } else if (rsi > 30 && rsi < 45) {
+        score += 10;
+        reasons.add('RSI=${rsi.toStringAsFixed(0)}');
+      }
+
+      final distPct = (ema50 - price) / ema50 * 100;
+      if (distPct >= -1.5 && distPct <= 2.5) {
+        score += 20;
+        reasons.add('قرب EMA50');
+      }
+
+      if (vs > 1.3) {
+        score += 20;
+        reasons.add('حجم ×${vs.toStringAsFixed(1)}');
+      }
+
+      if (closes1h.length >= 3) {
+        final rsiPrev = Ind.rsi(closes1h.sublist(0, closes1h.length - 1), 14);
+        if (rsiPrev != null && rsi < rsiPrev) {
+          score += 10;
+          reasons.add('RSI↓');
+        }
+      }
+
+      if (score >= 60) {
+        final sl = price + atr * 1.5;
+        final tp = price - atr * 3.0;
+        return Signal(
+          symbol: symbol, direction: 'SHORT', score: score,
+          entry: price, stopLoss: sl, takeProfit: tp,
+          reason: reasons.join(' | '),
+        );
+      }
+    }
+
+    return Signal(
+      symbol: symbol, direction: 'NONE', score: score,
+      entry: price, stopLoss: 0, takeProfit: 0,
+      reason: score > 0 ? reasons.join(' | ') : 'لا توجد شروط كافية',
     );
   }
 }
