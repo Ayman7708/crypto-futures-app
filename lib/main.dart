@@ -82,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool _longBias = true;
   final Map<String, double> _pumpScores = {};
   final Map<String, ScalpSignal> _scalpSignals = {};
+  final Map<String, List<String>> _topContributors = {};
   final Map<String, String> _masterTopStrategies = {};
   final List<TradeRecord> _trades = [];
   final Map<String, double> _livePrices = {};
@@ -671,8 +672,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       isLong: isLong,
     );
     _lastTradeTime[symbol] = DateTime.now();
+    // Record top contributing indicators for learning
+    final mr = _masterResults[symbol];
+    if (mr != null) {
+      _topContributors[symbol] = [
+        ...mr.topBullish.take(5),
+        ...mr.topBearish.take(5),
+      ].map((e) => e.contains('(') ? e.split('(').first : e).toList();
+    }
     // Update ONLY the indicators that contributed to this signal
-    final activeNames = _topContributors[symbol] ?? [];
+    final activeNames = _topContributors[symbol] ?? <String>[];
     for (final ind in _indicators) {
       if (activeNames.contains(ind.name)) {
         ind.tests++;
