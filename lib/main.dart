@@ -677,7 +677,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           tabs: const [
             Tab(text: 'الرئيسية'), Tab(text: 'التحليل'),
             Tab(text: 'السجل'), Tab(text: 'الاختبار'), Tab(text: 'اختبار المؤشرات'),
-            Tab(text: 'المعتمدة'), Tab(text: 'الإعدادات'),],
+            Tab(text: 'المعتمدة'), Tab(text: 'البحث'), Tab(text: 'الإعدادات'),],
         ),
       ),
       body: Column(children: [
