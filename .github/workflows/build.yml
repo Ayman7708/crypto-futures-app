@@ -39,6 +39,9 @@ jobs:
           sed -i 's|<application|<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/><application|' "$MANIFEST"
           sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><application|' "$MANIFEST"
           sed -i 's|<application|<uses-permission android:name="android.permission.WAKE_LOCK"/><application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/><application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/><application|' "$MANIFEST"
           echo "=== Manifest patched ==="
           grep "uses-permission" "$MANIFEST" || true
 

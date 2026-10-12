@@ -10,6 +10,8 @@ import 'market_symbols.dart';
 import 'master_signal.dart';
 import 'search_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
 
@@ -59,13 +61,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   double _balance = 1000.0;
   double _initialCapital = 1000.0;
   double _marginPerTrade = 50.0;
-  int _leverage = 5;
+  int _leverage = 3;
   int _rsiBuy = 40;
   int _rsiSell = 60;
   int _smaShort = 5;
   int _smaLong = 10;
-  double _slPercent = 2.0;
-  double _tpPercent = 5.0;
+  double _slPercent = 1.5;
+  double _tpPercent = 3.0;
   int _scalpThreshold = 30;
   bool _scalpEnabled = true;
   bool _running = false;
@@ -115,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
   bool _focusFastCoins = true;
   int _topCoinCount = 10;
-  final int _maxPositions = 15;
+  final int _maxPositions = 5;
   final Map<String, DateTime> _lastTradeTime = {};
   double _dailyPnL = 0.0;
   DateTime _dailyResetDate = DateTime.now();
@@ -300,11 +302,58 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (_running) {
       _timer?.cancel();
       setState(() => _running = false);
+      _stopBackgroundService();
+      NotificationService.show('⏹ إيقاف البوت', 'تم إيقاف التداول الآلي');
     } else {
       setState(() => _running = true);
+      _startBackgroundService();
       _tick();
       _timer = Timer.periodic(const Duration(seconds: LOOP_SECONDS), (_) => _tick());
+      NotificationService.show('▶ بدء البوت', 'البوت يعمل في الخلفية الآن');
     }
+  }
+
+  Future<void> _startBackgroundService() async {
+    final service = FlutterBackgroundService();
+    await service.configure(
+      androidConfiguration: AndroidConfiguration(
+        onStart: _onBackgroundStart,
+        autoStart: true,
+        isForegroundMode: true,
+        notificationChannelId: 'crypto_bot_bg',
+        initialNotificationTitle: 'بوت التداول يعمل',
+        initialNotificationContent: 'المراقبة جارية...',
+        foregroundServiceNotificationId: 888,
+        foregroundServiceTypes: [AndroidForegroundType.dataSync],
+      ),
+      iosConfiguration: IosConfiguration(autoStart: true, onForeground: _onBackgroundStart),
+    );
+    await service.startService();
+  }
+
+  Future<void> _stopBackgroundService() async {
+    final service = FlutterBackgroundService();
+    service.invoke('stopService');
+  }
+
+  @pragma('vm:entry-point')
+  static void _onBackgroundStart(ServiceInstance service) async {
+    // Background service is alive; actual trading happens in main isolate with wakelock
+    if (service is AndroidServiceInstance) {
+      service.on('stopService').listen((event) {
+        service.stopSelf();
+      });
+      service.setAsForegroundService();
+    }
+    // Keep-alive loop
+    Timer.periodic(const Duration(seconds: 30), (timer) async {
+      if (service is AndroidServiceInstance) {
+        await service.setForegroundNotificationInfo(
+          title: 'بوت التداول يعمل',
+          content: 'المراقبة جارية ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+        );
+      }
+    });
   }
 
   Future<void> _tick() async {
@@ -457,7 +506,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final rsi = Indicators.rsi(hist, 14);
     if (ss == null || sl == null || rsi == null) return;
 
-    final thr = LearningEngine.adaptiveThreshold(_trades, _scalpThreshold);
+    final thr = _scalpThreshold.clamp(30, 50);  // FORCED LOW for scalping
     final signal = AdvancedAnalyzer.analyze(
       closes: hist,
       highs: _highHistory[symbol]!,
@@ -594,14 +643,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _recoveryMultiplier = 1.0;
     } else {
       final lossPct = _dailyPnL.abs() / _initialCapital;
-      if (lossPct < 0.03) {
-        _recoveryMultiplier = 1.3;
-      } else if (lossPct < 0.07) {
-        _recoveryMultiplier = 1.8;
-      } else if (lossPct < 0.12) {
-        _recoveryMultiplier = 2.5;
+      if (lossPct < 0.05) {
+        _recoveryMultiplier = 1.1;
       } else {
-        _recoveryMultiplier = 3.5;
+        _recoveryMultiplier = 1.3;  // HARD CAP at 1.3x
       }
     }
   }
@@ -626,10 +671,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       isLong: isLong,
     );
     _lastTradeTime[symbol] = DateTime.now();
-    // Update indicator test counts
+    // Update ONLY the indicators that contributed to this signal
+    final activeNames = _topContributors[symbol] ?? [];
     for (final ind in _indicators) {
-      ind.tests++;
-      ind.wins++;  // Will be adjusted if trade loses
+      if (activeNames.contains(ind.name)) {
+        ind.tests++;
+      }
     }
     _balance -= _marginPerTrade;
     _trades.insert(0, TradeRecord(
@@ -673,7 +720,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       time: DateTime.now(), isScalp: pos.isScalp,
     ));
     _positions.remove(symbol);
-    NotificationService.show('Close $symbol', '$reason PnL: \$${pnl.toStringAsFixed(2)}');
+    NotificationService.show(
+      pnl >= 0 ? '🎯 ربح $symbol' : '🛑 خسارة $symbol',
+      'السبب: $reason | PnL: \$${pnl.toStringAsFixed(2)} | الرصيد: \$${_balance.toStringAsFixed(2)}',
+    );
     if (_trades.length > 200) _trades.removeLast();
     _saveState();
   }
