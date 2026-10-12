@@ -6,6 +6,7 @@ import 'learning.dart';
 import 'strategies.dart';
 import 'market_regime.dart';
 import 'volatility.dart';
+import 'market_symbols.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'advanced.dart';
 import 'api_candles.dart';
@@ -16,7 +17,8 @@ void main() {
   runApp(const CryptoBotApp());
 }
 
-const List<String> SYMBOLS = [
+// Fallback list used until Binance fetch completes
+const List<String> FALLBACK_SYMBOLS = [
   'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT',
   'ADAUSDT', 'DOTUSDT', 'LINKUSDT', 'MATICUSDT', 'AVAXUSDT', 'ATOMUSDT',
   'NEARUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT',
@@ -88,6 +90,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final MasterEngine _master = MasterEngine();
   MarketAnalysis? _marketAnalysis;
   final Map<String, VolatilityScore> _volScores = {};
+  List<String> _allSymbols = [];
+  int _maxActiveSymbols = 30;
+  bool _loadingSymbols = false;
+
+  List<String> get _activeSymbols {
+    if (_allSymbols.isEmpty) return FALLBACK_SYMBOLS;
+    // If we have volatility scores, return top N by opportunity
+    if (_volScores.isNotEmpty) {
+      final sorted = _volScores.values.toList()
+        ..sort((a, b) => b.opportunity.compareTo(a.opportunity));
+      final active = sorted.take(_maxActiveSymbols).map((v) => v.symbol).toList();
+      // Always ensure BTC is included for market analysis
+      if (!active.contains('BTCUSDT') && _allSymbols.contains('BTCUSDT')) {
+        active.add('BTCUSDT');
+      }
+      return active;
+    }
+    return _allSymbols.take(_maxActiveSymbols).toList();
+  }
   bool _focusFastCoins = true;
   int _topCoinCount = 10;
   final int _maxPositions = 5;
@@ -99,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabs = TabController(length: 7, vsync: this);
-    for (final s in SYMBOLS) {
+    for (final s in _activeSymbols) {
       _priceHistory[s] = [];
       _highHistory[s] = [];
       _lowHistory[s] = [];
@@ -128,13 +149,37 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   List<String> get _sortedSymbols {
-    final list = List<String>.from(SYMBOLS);
+    final list = List<String>.from(_activeSymbols);
     list.sort((a, b) {
       final sa = _pumpScores[a] ?? 0;
       final sb = _pumpScores[b] ?? 0;
       return sb.compareTo(sa);
     });
     return list;
+  }
+
+  Future<void> _loadAllSymbols() async {
+    if (_loadingSymbols) return;
+    setState(() => _loadingSymbols = true);
+    try {
+      final symbols = await MarketService.fetchAllSymbols(minVolumeUsdt: 50000000);
+      if (symbols != null && symbols.isNotEmpty && mounted) {
+        setState(() {
+          _allSymbols = symbols;
+          for (final s in symbols) {
+            _priceHistory.putIfAbsent(s, () => []);
+            _highHistory.putIfAbsent(s, () => []);
+            _lowHistory.putIfAbsent(s, () => []);
+            _volumeHistory.putIfAbsent(s, () => []);
+          }
+        });
+        debugPrint('🎯 Loaded ${symbols.length} symbols from Binance');
+      }
+    } catch (e) {
+      debugPrint('Failed to load symbols: $e');
+    } finally {
+      if (mounted) setState(() => _loadingSymbols = false);
+    }
   }
 
   Future<void> _loadState() async {
@@ -175,6 +220,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
         _focusFastCoins = (s['focusFast'] as bool?) ?? true;
         _topCoinCount = (s['topCoinCount'] as num?)?.toInt() ?? 10;
+        _maxActiveSymbols = (s['maxActive'] as num?)?.toInt() ?? 30;
+        if (s['allSymbols'] != null) {
+          _allSymbols = (s['allSymbols'] as List).map((e) => e.toString()).toList();
+          for (final sym in _allSymbols) {
+            _priceHistory.putIfAbsent(sym, () => []);
+            _highHistory.putIfAbsent(sym, () => []);
+            _lowHistory.putIfAbsent(sym, () => []);
+            _volumeHistory.putIfAbsent(sym, () => []);
+          }
+        }
         final hist = data['history'] as Map<String, dynamic>;
         hist.forEach((k, v) {
           _priceHistory[k] = (v as List).map((e) => (e as num).toDouble()).toList();
@@ -222,6 +277,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         'master': _master.toJson(),
         'focusFast': _focusFastCoins,
         'topCoinCount': _topCoinCount,
+        'allSymbols': _allSymbols,
+        'maxActive': _maxActiveSymbols,
       },
     );
     await StorageService.saveHistory(_priceHistory);
@@ -239,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _tick() async {
-    final candles = await CandleService.fetchAll(SYMBOLS);
+    final candles = await CandleService.fetchAll(_activeSymbols);
     if (candles == null) {
       if (mounted) setState(() => _lastError = 'API error');
       return;
@@ -247,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (!mounted) return;
     setState(() {
       _lastError = '';
-      for (final sym in SYMBOLS) {
+      for (final sym in _activeSymbols) {
         final c = candles[sym];
         if (c == null || c.isEmpty) continue;
         final last = c.last;
@@ -274,7 +331,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
         // Build alt map excluding BTC
         final altMap = <String, List<double>>{};
-        for (final sym in SYMBOLS) {
+        for (final sym in _activeSymbols) {
           if (sym == 'BTCUSDT') continue;
           final h = _priceHistory[sym];
           if (h != null && h.length >= 50) altMap[sym] = h;
@@ -284,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
       }
       // Compute volatility score for every symbol
-      for (final sym in SYMBOLS) {
+      for (final sym in _activeSymbols) {
         final h = _priceHistory[sym];
         final hh = _highHistory[sym];
         final ll = _lowHistory[sym];
@@ -746,7 +803,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       children: [
         _buildLearningCard(),
         const SizedBox(height: 10),
-        ...SYMBOLS.map((sym) => _buildAnalyticsTile(sym)),
+        ..._activeSymbols.map((sym) => _buildAnalyticsTile(sym)),
       ],
     );
   }
@@ -907,9 +964,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildAnalyticsOld() {
     return ListView.builder(
-      padding: const EdgeInsets.all(10), itemCount: SYMBOLS.length,
+      padding: const EdgeInsets.all(10), itemCount: _activeSymbols.length,
       itemBuilder: (context, i) {
-        final sym = SYMBOLS[i];
+        final sym = _activeSymbols[i];
         final hist = _priceHistory[sym]!;
         if (hist.length < 30) return _card('$sym', 'Analyzing... (${hist.length}/30)');
         final rsi = Indicators.rsi(hist, 14);
@@ -1017,7 +1074,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       children: [
         const Text('الاختبار على البيانات المجمعة', style: TextStyle(color: Colors.white70, fontSize: 13)),
         const SizedBox(height: 12),
-        for (final sym in SYMBOLS)
+        for (final sym in _activeSymbols)
           Container(
             margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: const Color(0xFF131A26), borderRadius: BorderRadius.circular(12),
@@ -1179,7 +1236,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           subtitle: const Text('يتداول فقط أعلى العملات تحركاً', style: TextStyle(fontSize: 11)),
           activeColor: const Color(0xFFFF6B35),
         ),
-        _settingRow('عدد العملات المُختارة', '$_topCoinCount من ${SYMBOLS.length}',
+        _settingRow('عدد العملات النشطة', '$_maxActiveSymbols',
+            (v) => setState(() => _maxActiveSymbols = int.tryParse(v) ?? _maxActiveSymbols)),
+        _settingRow('عدد العملات المُختارة', '$_topCoinCount من ${_activeSymbols.length}',
             (v) => setState(() => _topCoinCount = int.tryParse(v) ?? _topCoinCount)),
         const SizedBox(height: 8),
         _sectionTitle('الإسكالبينج'),
@@ -1238,7 +1297,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 _balance = _initialCapital;
                 _positions.clear();
                 _trades.clear();
-                for (final s in SYMBOLS) {
+                for (final s in _activeSymbols) {
                   _priceHistory[s]!.clear();
                   _highHistory[s]!.clear();
                   _lowHistory[s]!.clear();
