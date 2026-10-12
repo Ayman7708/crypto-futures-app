@@ -126,6 +126,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _lowHistory[s] = [];
       _volumeHistory[s] = [];
     }
+    _loadAllSymbols();
     _loadState().then((_) {
       if (mounted && !_running) {
         Future.delayed(const Duration(seconds: 2), () {
