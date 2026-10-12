@@ -116,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   int _topCoinCount = 10;
   final int _maxPositions = 5;
   final Map<String, DateTime> _lastTradeTime = {};
-  static const int _cooldownSeconds = 60;
+  static const int _cooldownSeconds = 600;
 
   @override
   void initState() {
@@ -470,9 +470,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _pumpScores[symbol] = signal.pumpProb;
 
     if (pos != null) {
-      if (rsi > 75 || (ss < sl && rsi > 70)) {
+      // Only exit on extreme conditions: RSI > 85 AND bearish SMA cross
+      // This lets winning positions run with trailing stop
+      final rsiVeryHigh = rsi > 85;
+      final smaBearish = ss < sl;
+      if (rsiVeryHigh && smaBearish) {
         _closePosition(symbol, price, 'SELL');
       }
+      // If profit is already strong (>= 5%), let trailing handle it
       return;
     }
     if (_balance < _marginPerTrade) return;
@@ -571,7 +576,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return DateTime.now().difference(last).inSeconds >= _cooldownSeconds;
   }
 
+  final Map<String, DateTime> _lastProfitTime = {};
+
   void _openPosition(String symbol, double price, {required bool isScalp, bool isLong = true}) {
+    // Profit lockout: don't reopen same coin for 15 min after a profitable close
+    final lastProfit = _lastProfitTime[symbol];
+    if (lastProfit != null) {
+      final mins = DateTime.now().difference(lastProfit).inMinutes;
+      if (mins < 15) return;
+    }
     final size = (_marginPerTrade * _leverage) / price;
     final sl = isLong
         ? price * (1 - _slPercent / 100)
@@ -602,6 +615,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final pos = _positions[symbol];
     if (pos == null) return;
     final pnl = (price - pos.entry) * pos.size;
+    if (pnl > 0) _lastProfitTime[symbol] = DateTime.now();
     final wasWin = pnl > 0;
     final reason_str = _scalpSignals[symbol]?.reason ?? '';
     _learner.updateFromTrade(
@@ -1094,40 +1108,77 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  Widget _statBox(String label, String value, Color color) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Text(value, style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.bold)),
+      Text(label, style: const TextStyle(color: Color(0xFF8892A6), fontSize: 10)),
+    ]);
+  }
+
   Widget _buildTrades() {
-    if (_trades.isEmpty) {
-      return const Center(child: Text('لا توجد صفقات بعد', style: TextStyle(color: Color(0xFF4B5563))));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(10), itemCount: _trades.length,
-      itemBuilder: (context, i) {
-        final t = _trades[i];
-        Color color = const Color(0xFF4ADE80);
-        String label = 'شراء';
-        if (t.action == 'SELL') { color = const Color(0xFFEF4444); label = 'بيع'; }
-        if (t.action == 'SCALP_BUY') { color = const Color(0xFFF59E0B); label = 'إسكالبينج'; }
-        if (t.action == 'STOP_LOSS') { color = const Color(0xFFDC2626); label = 'وقف خسارة'; }
-        if (t.action == 'TAKE_PROFIT') { color = const Color(0xFF16A34A); label = 'جني ربح'; }
-        if (t.action == 'LIQUIDATED') { color = const Color(0xFFF59E0B); label = 'تصفية'; }
-        return Container(
-          margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A2332), borderRadius: BorderRadius.circular(8),
-            border: Border(right: BorderSide(color: color, width: 3))),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('$label ${t.symbol}', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
-              Text('${t.time.hour}:${t.time.minute.toString().padLeft(2, '0')} \$${t.price.toStringAsFixed(2)}',
-                  style: const TextStyle(color: Color(0xFF8892A6), fontSize: 11)),
-            ]),
-            if (t.pnl != 0)
-              Text('${t.pnl >= 0 ? '+' : ''}\$${t.pnl.toStringAsFixed(2)}',
-                  style: TextStyle(color: t.pnl >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFEF4444),
-                      fontWeight: FontWeight.bold)),
-          ]),
-        );
-      },
-    );
+    final openCount = _positions.length;
+    final closed = _trades.where((t) => t.pnl != 0).toList();
+    final wins = closed.where((t) => t.pnl > 0).length;
+    final losses = closed.where((t) => t.pnl < 0).length;
+    final totalPnl = closed.fold<double>(0, (s, t) => s + t.pnl);
+    final wr = closed.isEmpty ? 0.0 : (wins / closed.length * 100);
+
+    return Column(children: [
+      Container(
+        margin: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF131A26),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF60A5FA)),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _statBox('مفتوحة', '$openCount', const Color(0xFF60A5FA)),
+          _statBox('رابحة', '$wins', const Color(0xFF4ADE80)),
+          _statBox('خاسرة', '$losses', const Color(0xFFEF4444)),
+          _statBox('نجاح', '${wr.toStringAsFixed(0)}%', const Color(0xFFF59E0B)),
+          _statBox('PnL', '${totalPnl >= 0 ? "+" : ""}\$${totalPnl.toStringAsFixed(1)}',
+            totalPnl >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFEF4444)),
+        ]),
+      ),
+      Expanded(
+        child: _trades.isEmpty
+          ? const Center(child: Text('لا توجد صفقات بعد', style: TextStyle(color: Color(0xFF4B5563))))
+          : ListView.builder(
+              padding: const EdgeInsets.all(10), itemCount: _trades.length,
+              itemBuilder: (context, i) {
+                final t = _trades[i];
+                Color color = const Color(0xFF4ADE80);
+                String label = 'شراء';
+                if (t.action == 'SELL') { color = const Color(0xFFEF4444); label = 'بيع'; }
+                if (t.action == 'SCALP_BUY') { color = const Color(0xFFF59E0B); label = 'إسكالبينج'; }
+                if (t.action == 'STOP_LOSS') { color = const Color(0xFFDC2626); label = 'وقف خسارة'; }
+                if (t.action == 'TAKE_PROFIT') { color = const Color(0xFF16A34A); label = 'جني ربح'; }
+                if (t.action == 'LIQUIDATED') { color = const Color(0xFFF59E0B); label = 'تصفية'; }
+                if (t.action == 'MANUAL') { color = const Color(0xFF60A5FA); label = 'يدوي'; }
+                final isEntry = t.action == 'BUY' || t.action == 'SCALP_BUY';
+                final priceLabel = isEntry ? 'دخول' : 'خروج';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A2332), borderRadius: BorderRadius.circular(8),
+                    border: Border(right: BorderSide(color: color, width: 3))),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('$label ${t.symbol}', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text('${t.time.hour}:${t.time.minute.toString().padLeft(2, '0')} | $priceLabel: \$${t.price.toStringAsFixed(4)}',
+                          style: const TextStyle(color: Color(0xFF8892A6), fontSize: 11)),
+                    ]),
+                    if (t.pnl != 0)
+                      Text('${t.pnl >= 0 ? '+' : ''}\$${t.pnl.toStringAsFixed(2)}',
+                          style: TextStyle(color: t.pnl >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFEF4444),
+                              fontWeight: FontWeight.bold)),
+                  ]),
+                );
+              },
+            ),
+      ),
+    ]);
   }
 
   Widget _buildBacktest() {
