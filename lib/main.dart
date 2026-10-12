@@ -52,11 +52,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabs;
 
   double _balance = 1000.0;
-  final double _initialCapital = 1000.0;
+  double _initialCapital = 1000.0;
   final int _leverage = 3;
   bool _running = false;
   bool _loaded = false;
@@ -85,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
     for (final s in WATCH_SYMBOLS) {
       _closes1h[s] = [];
       _highs1h[s] = [];
@@ -98,6 +99,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Save state whenever app goes to background or closes
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _saveState();
+    }
+    super.didChangeAppLifecycleState(state);
+  }
+
   @override
   void dispose() {
     WakelockPlus.disable();
@@ -108,14 +121,54 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Future<void> _loadState() async {
     try {
-      final data = await StorageService.loadAll().timeout(const Duration(seconds: 4));
+      final data = await StorageService.loadAll().timeout(const Duration(seconds: 5));
       if (data != null && mounted) {
         setState(() {
+          // 1. Balance
           _balance = (data['balance'] as num?)?.toDouble() ?? 1000.0;
-          _risk.initialize(_balance);
+
+          // 2. Settings
+          final settings = (data['settings'] as Map<String, dynamic>?) ?? {};
+          _initialCapital = (settings['initialCapital'] as num?)?.toDouble() ?? 1000.0;
+
+          // 3. Positions
+          final posRaw = (data['positions'] as Map<String, dynamic>?) ?? {};
+          _positions.clear();
+          posRaw.forEach((k, v) {
+            try {
+              _positions[k] = Position.fromJson(Map<String, dynamic>.from(v));
+            } catch (e) {
+              debugPrint('Position load error: $e');
+            }
+          });
+
+          // 4. Trades
+          final tradesRaw = (data['trades'] as List?) ?? [];
+          _trades.clear();
+          for (final t in tradesRaw) {
+            try {
+              _trades.add(TradeRecord.fromJson(Map<String, dynamic>.from(t)));
+            } catch (e) {
+              debugPrint('Trade load error: $e');
+            }
+          }
+
+          // 5. Risk state
+          if (settings['risk'] != null) {
+            _risk.loadFromJson(Map<String, dynamic>.from(settings['risk']));
+          } else {
+            _risk.initialize(_balance);
+          }
+
+          debugPrint('✅ Loaded: balance=$_balance, positions=${_positions.length}, trades=${_trades.length}');
         });
+      } else {
+        _risk.initialize(_balance);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Load error: $e');
+      _risk.initialize(_balance);
+    }
     if (mounted) setState(() => _loaded = true);
   }
 
@@ -127,9 +180,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         balance: _balance,
         positions: posMap,
         trades: _trades.map((t) => t.toJson()).toList(),
-        settings: {'risk': _risk.toJson()},
+        settings: {
+          'initialCapital': _initialCapital,
+          'risk': _risk.toJson(),
+        },
       );
-    } catch (_) {}
+      debugPrint('💾 Saved: balance=$_balance, positions=${_positions.length}, trades=${_trades.length}');
+    } catch (e) {
+      debugPrint('Save error: $e');
+    }
   }
 
   void _toggleBot() {
@@ -241,6 +300,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
     _balance -= margin;
     _risk.recordOpen();
+    _saveState();
     _trades.insert(0, TradeRecord(
       symbol: sym,
       action: signal.direction == 'LONG' ? 'BUY' : 'SELL_SHORT',
@@ -277,6 +337,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       '$reason | PnL: \$${pnl.toStringAsFixed(2)} | الرصيد: \$${_balance.toStringAsFixed(2)}',
     );
     if (_trades.length > 200) _trades.removeLast();
+    _saveState();
   }
 
   void _manualOpen(String sym) {
