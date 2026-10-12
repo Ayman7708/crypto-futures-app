@@ -208,7 +208,7 @@ class StrategyAnalyzer {
         }
       }
 
-      if (score >= 60) {
+      if (score >= 50) {
         final sl = price - atr * 1.5;
         final tp = price + atr * 3.0;
         return Signal(
@@ -253,7 +253,7 @@ class StrategyAnalyzer {
         }
       }
 
-      if (score >= 60) {
+      if (score >= 50) {
         final sl = price + atr * 1.5;
         final tp = price - atr * 3.0;
         return Signal(
