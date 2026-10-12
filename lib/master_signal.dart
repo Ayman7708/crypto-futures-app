@@ -78,8 +78,8 @@ class MasterSignal {
     final votes = <SignalVote>[];
 
     // ============ TREND INDICATORS ============
-    final sma5 = _sma(closes, smaShort);
-    final sma20 = _sma(closes, smaLong);
+    final sma5 = smaCalc(closes, smaShort);
+    final sma20 = smaCalc(closes, smaLong);
     if (sma5 != null && sma20 != null) {
       votes.add(SignalVote('SMA Cross', 'Trend', sma5 > sma20 ? 60 : -60, weights['SMA Cross']!));
     }
@@ -410,7 +410,7 @@ class MasterSignal {
     filter.updateFromTrade(names, wasWin);
   }
 
-  double? _sma(List<double> arr, int p) {
+  double? smaCalc(List<double> arr, int p) {
     if (arr.length < p) return null;
     double s = 0;
     for (int i = arr.length - p; i < arr.length; i++) s += arr[i];

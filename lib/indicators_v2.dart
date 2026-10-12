@@ -130,7 +130,7 @@ class IndicatorsV2 {
 
   // ============= Elder Ray (Bull/Bear Power) =============
   static (double?, double?) elderRay(List<double> highs, List<double> lows, List<double> closes, [int period = 13]) {
-    final e = _ema(closes, period);
+    final e = emaCalc(closes, period);
     if (e == null) return (null, null);
     final bull = highs.last - e;
     final bear = lows.last - e;
@@ -140,8 +140,8 @@ class IndicatorsV2 {
   // ============= Schaff Trend Cycle =============
   static double? schaffTrend(List<double> closes, [int fast = 23, int slow = 50, int cycle = 10]) {
     if (closes.length < slow) return null;
-    final e1 = _ema(closes, fast);
-    final e2 = _ema(closes, slow);
+    final e1 = emaCalc(closes, fast);
+    final e2 = emaCalc(closes, slow);
     if (e1 == null || e2 == null) return null;
     final macd = e1 - e2;
     return macd.clamp(-100, 100);
